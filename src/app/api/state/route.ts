@@ -9,7 +9,7 @@ export async function GET() {
     const raw = readFileSync(statePath, 'utf-8');
     const state = JSON.parse(raw);
     return NextResponse.json(state);
-  } catch (error) {
+  } catch {
     return NextResponse.json({
       merkle_root: "error_reading_state",
       last_check: new Date().toISOString(),

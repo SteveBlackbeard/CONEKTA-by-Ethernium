@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import { extname, join } from 'path';
+import { getErrorMessage } from '@/lib/errors';
 
 export const runtime = 'nodejs';
 
@@ -32,7 +33,7 @@ export async function GET(
         'Cache-Control': 'no-store',
       },
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'ASSET_NOT_FOUND' }, { status: 404 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error, 'ASSET_NOT_FOUND') }, { status: 404 });
   }
 }

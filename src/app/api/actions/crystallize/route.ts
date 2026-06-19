@@ -3,6 +3,7 @@ import { exec } from 'child_process';
 import { join } from 'path';
 import { promisify } from 'util';
 import { appendEvent } from '@/lib/eventChain';
+import { getErrorMessage } from '@/lib/errors';
 
 const execPromise = promisify(exec);
 
@@ -33,8 +34,9 @@ export async function POST() {
       output: stdout 
     });
 
-  } catch (error: any) {
-    console.error(`[SOVEREIGN] EXECUTION FAILED: ${error.message}`);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    console.error(`[SOVEREIGN] EXECUTION FAILED: ${message}`);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import { join } from 'path';
 import crypto from 'crypto';
+import { getErrorCode, getErrorMessage } from '@/lib/errors';
 
 export interface ChainEvent {
   seq: number;
@@ -9,7 +10,7 @@ export interface ChainEvent {
   input_hash: string;
   output_hash: string;
   parent_hash: string;
-  payload: any;
+  payload: unknown;
   chain_hash: string;
 }
 
@@ -29,7 +30,7 @@ async function getStateHash(): Promise<string> {
   }
 }
 
-export async function appendEvent(type: string, payload: any): Promise<ChainEvent> {
+export async function appendEvent(type: string, payload: unknown): Promise<ChainEvent> {
   let seq = 0;
   let parent_hash = '0'.repeat(64);
   let previous_output_hash = '0'.repeat(64);
@@ -43,7 +44,7 @@ export async function appendEvent(type: string, payload: any): Promise<ChainEven
       parent_hash = lastEvent.chain_hash;
       previous_output_hash = lastEvent.output_hash;
     }
-  } catch (e) {
+  } catch {
     // File doesn't exist or is empty
   }
 
@@ -100,9 +101,9 @@ export async function verifyChain(): Promise<{ intact: boolean; error?: string }
     }
     
     return { intact: true };
-  } catch (e: any) {
-    if (e.code === 'ENOENT') return { intact: true }; // Empty is intact
-    return { intact: false, error: e.message };
+  } catch (error: unknown) {
+    if (getErrorCode(error) === 'ENOENT') return { intact: true }; // Empty is intact
+    return { intact: false, error: getErrorMessage(error) };
   }
 }
 
@@ -112,7 +113,7 @@ export async function getEvents(limit = 10): Promise<ChainEvent[]> {
     const lines = content.trim().split('\n').filter(Boolean);
     const events = lines.map(l => JSON.parse(l)).reverse().slice(0, limit);
     return events;
-  } catch (e) {
+  } catch {
     return [];
   }
 }

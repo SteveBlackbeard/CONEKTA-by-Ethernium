@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import { join, extname } from 'path';
 import { GraphNodeAssetOverride } from '@/lib/graphData';
 import { CANONICAL_ASSET_FILES, CanonicalAssetTarget, NodeAssetFamily, NodeAssetFamilyOverrides } from '@/lib/nodeAssets';
+import { getErrorMessage } from '@/lib/errors';
 
 export const runtime = 'nodejs';
 
@@ -277,8 +278,8 @@ export async function POST(request: Request) {
       slot,
       src: toRuntimePath(fileName),
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'ASSET_PERSIST_ERROR' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error, 'ASSET_PERSIST_ERROR') }, { status: 500 });
   }
 }
 
@@ -351,8 +352,8 @@ export async function PATCH(request: Request) {
       family,
       slot,
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'ASSET_FAMILY_PATCH_ERROR' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error, 'ASSET_FAMILY_PATCH_ERROR') }, { status: 500 });
   }
 }
 
@@ -374,8 +375,8 @@ export async function PUT(request: Request) {
       overrides: normalizeOverrides(overrides),
       familyProfiles: normalizeFamilyProfiles(familyProfiles),
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'ASSET_SESSION_SYNC_ERROR' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error, 'ASSET_SESSION_SYNC_ERROR') }, { status: 500 });
   }
 }
 
@@ -439,7 +440,7 @@ export async function DELETE(request: Request) {
       familyProfiles: normalizeFamilyProfiles(familyProfiles),
       nodeId,
     });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'ASSET_DELETE_ERROR' }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error, 'ASSET_DELETE_ERROR') }, { status: 500 });
   }
 }

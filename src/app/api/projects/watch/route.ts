@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import chokidar from 'chokidar';
-import fs from 'fs';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +26,7 @@ export async function GET(req: NextRequest) {
         depth: 1, // Only watch top-level for performance
       });
 
-      const sendEvent = (event: string, data: any) => {
+      const sendEvent = (event: string, data: Record<string, string>) => {
         const payload = `data: ${JSON.stringify({ event, ...data })}\n\n`;
         controller.enqueue(encoder.encode(payload));
       };

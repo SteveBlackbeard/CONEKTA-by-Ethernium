@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { forwardBridgePayload, getAdapterStatuses, getAdapterConfig, invokeOllamaChat } from '@/lib/localAdapters';
+import { getErrorMessage } from '@/lib/errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -74,9 +75,9 @@ export async function POST(request: Request) {
         JSON.stringify(result),
       raw: result,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { success: false, error: error?.message || 'CHAT_BRIDGE_FAILURE' },
+      { success: false, error: getErrorMessage(error, 'CHAT_BRIDGE_FAILURE') },
       { status: 500 },
     );
   }

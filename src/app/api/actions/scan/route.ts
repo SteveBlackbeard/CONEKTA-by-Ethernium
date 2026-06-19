@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { getErrorMessage } from '@/lib/errors';
 
 export async function POST(request: Request) {
   try {
@@ -31,13 +32,13 @@ export async function POST(request: Request) {
           // Skip inaccessible files
         }
       }
-    } catch (err: any) {
-      return NextResponse.json({ success: false, error: `Cannot read directory: ${err.message}` }, { status: 500 });
+    } catch (err: unknown) {
+      return NextResponse.json({ success: false, error: `Cannot read directory: ${getErrorMessage(err)}` }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, entries });
 
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ success: false, error: getErrorMessage(error) }, { status: 500 });
   }
 }

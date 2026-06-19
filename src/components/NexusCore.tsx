@@ -1,16 +1,18 @@
 ﻿"use client";
 import React, { useRef, useMemo, useState, useCallback, useEffect, useDeferredValue } from 'react';
-import { Canvas, useFrame, extend, ThreeElement, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, extend, ThreeElement, useThree, ThreeEvent } from '@react-three/fiber';
 import { Points, PointMaterial, Octahedron, Sphere, OrbitControls, Text, Html } from '@react-three/drei';
 import * as THREE from 'three';
 const { MOUSE } = THREE;
 import { CoreShaderMaterial, BeamShaderMaterial } from './shaders/CoreShader';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { buildStaticGraph, buildProjectNodes, GraphNode, GraphEdge, LinkedSystem, NodeCluster, GRAPH_CLUSTER_CONFIG, GraphNodeAssetOverride, GraphNodeAssetStageOverride } from '@/lib/graphData';
-import { getNodeAssetProfile, getNodeAssetSource, getSentinelAssetProfile, nodeHasCanonicalAsset, nodeUsesExternalAsset, NodeAssetFamilyOverrides, NodeAssetProfile, NodeAssetStage } from '@/lib/nodeAssets';
+import { getNodeAssetProfile, getNodeAssetSource, getSentinelAssetProfile, nodeUsesExternalAsset, NodeAssetFamilyOverrides, NodeAssetProfile, NodeAssetStage } from '@/lib/nodeAssets';
 import { createNodeGlyphTexture, DocumentGlyphKind } from '@/lib/nodeGlyphTextures';
 import { Language, translations, translateActiveCommand, translateModeLabel, translateReason, translateSeverity, translateTrust, tt } from '@/lib/i18n';
 import { ChainEventSnapshot, ChainStatusSnapshot, DashboardSignals, deriveDashboardSignals, PhysicsSnapshot } from '@/lib/telemetry';
 import { readHandleBackedFile, removeLinkedSystemHandle } from '@/lib/filesystemHandles';
+import { getErrorMessage } from '@/lib/errors';
 import NodeAssetRig from './NodeAssetRig';
 
 type QualityTier = 'ultra' | 'balanced' | 'safe';
@@ -70,6 +72,22 @@ const EDIT_MODE_SECRET_CODES = [
 type PendingAssetTarget =
   | { nodeId: string; slot: AssetStageSlot; family?: undefined }
   | { family: 'sentinel'; slot: AssetStageSlot; nodeId?: undefined };
+type ThreePointerEvent = ThreeEvent<PointerEvent>;
+type OrbitControlsRef = OrbitControlsImpl;
+type BeamMaterialRef = THREE.ShaderMaterial & {
+  u_time: number;
+  u_color: THREE.Color;
+};
+
+function capturePointer(event: ThreePointerEvent) {
+  const target = event.target as EventTarget & { setPointerCapture?: (pointerId: number) => void };
+  target.setPointerCapture?.(event.pointerId);
+}
+
+function releasePointer(event: ThreePointerEvent) {
+  const target = event.target as EventTarget & { releasePointerCapture?: (pointerId: number) => void };
+  target.releasePointerCapture?.(event.pointerId);
+}
 
 function mergeGraphNodeAssetOverride(
   base?: GraphNodeAssetOverride,
@@ -412,7 +430,7 @@ function WaveMonitor({
           <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.active_vector', 'ACTIVE_VECTOR')}: {activeVectorText}</div>
           <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'common.severity', 'SEVERITY')}: {severityText}</div>
           <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.wave.merkle_log', 'MERKLE_LOG')}: {merkle.slice(0, 10).toUpperCase()}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.audio_bus', 'AUDIO_BUS')}: {audioArmed ? tt(dictionary, 'core.audio.armed', 'ARMED') : tt(dictionary, 'core.audio.standby', 'STANDBY')} // {tt(dictionary, 'core.motion', 'MOTION')}: {reducedMotion ? tt(dictionary, 'core.motion.reduced', 'REDUCED') : tt(dictionary, 'core.motion.full', 'FULL')}</div>
+          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.audio_bus', 'AUDIO_BUS')}: {audioArmed ? tt(dictionary, 'core.audio.armed', 'ARMED') : tt(dictionary, 'core.audio.standby', 'STANDBY')} {'//'} {tt(dictionary, 'core.motion', 'MOTION')}: {reducedMotion ? tt(dictionary, 'core.motion.reduced', 'REDUCED') : tt(dictionary, 'core.motion.full', 'FULL')}</div>
           <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.quality_profile', 'QUALITY_PROFILE')}: {qualityTier.toUpperCase()}</div>
           {latestChainEvent && <div style={{ color: palette.accent, fontSize: '0.44rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.recent_chain_event', 'RECENT_CHAIN_EVENT')}: {latestChainEvent.type}</div>}
         </div>
@@ -573,14 +591,14 @@ function SentinelDrone({
       />
     </mesh>
   );
-  const startRotate = useCallback((event: any) => {
+  const startRotate = useCallback((event: ThreePointerEvent) => {
     if (!editMode) return;
     rotatingRef.current = true;
     event.stopPropagation();
-    event.target?.setPointerCapture?.(event.pointerId);
+    capturePointer(event);
     onSelectForEdit?.(index);
   }, [editMode, index, onSelectForEdit]);
-  const moveRotate = useCallback((event: any) => {
+  const moveRotate = useCallback((event: ThreePointerEvent) => {
     if (!rotatingRef.current || !editMode) return;
     event.stopPropagation();
     const dx = event.point.x - groupRef.current.position.x;
@@ -588,21 +606,21 @@ function SentinelDrone({
     const nextHeading = Math.atan2(dx, dz);
     onDraftAssetRotation?.([assetRotation[0] || 0, nextHeading, assetRotation[2] || 0]);
   }, [assetRotation, editMode, onDraftAssetRotation]);
-  const endRotate = useCallback((event: any) => {
+  const endRotate = useCallback((event: ThreePointerEvent) => {
     if (!rotatingRef.current) return;
     rotatingRef.current = false;
     event.stopPropagation();
-    event.target?.releasePointerCapture?.(event.pointerId);
+    releasePointer(event);
     onCommitAssetRotation?.();
   }, [onCommitAssetRotation]);
-  const startScale = useCallback((event: any) => {
+  const startScale = useCallback((event: ThreePointerEvent) => {
     if (!editMode) return;
     scalingRef.current = true;
     event.stopPropagation();
-    event.target?.setPointerCapture?.(event.pointerId);
+    capturePointer(event);
     onSelectForEdit?.(index);
   }, [editMode, index, onSelectForEdit]);
-  const moveScale = useCallback((event: any) => {
+  const moveScale = useCallback((event: ThreePointerEvent) => {
     if (!scalingRef.current || !editMode) return;
     event.stopPropagation();
     const dx = event.point.x - groupRef.current.position.x;
@@ -610,11 +628,11 @@ function SentinelDrone({
     const distance = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
     onDraftAssetScale?.(THREE.MathUtils.clamp(distance / editRingRadius, 0.18, 6));
   }, [editMode, onDraftAssetScale]);
-  const endScale = useCallback((event: any) => {
+  const endScale = useCallback((event: ThreePointerEvent) => {
     if (!scalingRef.current) return;
     scalingRef.current = false;
     event.stopPropagation();
-    event.target?.releasePointerCapture?.(event.pointerId);
+    releasePointer(event);
     onCommitAssetScale?.();
   }, [onCommitAssetScale]);
   useFrame((state) => {
@@ -873,7 +891,7 @@ function ConnectionBeam({
   emphasis?: number;
 }) {
   const count = 20;
-  const matRef = useRef<any>(null!);
+  const matRef = useRef<BeamMaterialRef>(null!);
   
   useFrame((state) => {
     if (matRef.current) {
@@ -1372,14 +1390,14 @@ function SystemNode({
     0.04,
     Math.cos((assetRotation[1] || 0) + Math.PI / 2) * (editRingRadius + 0.34),
   ];
-  const startDrag = useCallback((event: any) => {
+  const startDrag = useCallback((event: ThreePointerEvent) => {
     if (!editMode || !usesExternalAsset) return;
     draggingRef.current = true;
     event.stopPropagation();
-    event.target?.setPointerCapture?.(event.pointerId);
+    capturePointer(event);
     onSelectForEdit?.(node);
   }, [editMode, node, onSelectForEdit, usesExternalAsset]);
-  const moveDrag = useCallback((event: any) => {
+  const moveDrag = useCallback((event: ThreePointerEvent) => {
     if (!draggingRef.current || !editMode || !usesExternalAsset) return;
     event.stopPropagation();
     const nextOffset: [number, number, number] = [
@@ -1389,21 +1407,21 @@ function SystemNode({
     ];
     onDraftAssetOffset?.(node.id, nextOffset);
   }, [assetOffsetY, editMode, node.id, node.position, onDraftAssetOffset, usesExternalAsset]);
-  const endDrag = useCallback((event: any) => {
+  const endDrag = useCallback((event: ThreePointerEvent) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
     event.stopPropagation();
-    event.target?.releasePointerCapture?.(event.pointerId);
+    releasePointer(event);
     onCommitAssetOffset?.(node.id);
   }, [node.id, onCommitAssetOffset]);
-  const startRotate = useCallback((event: any) => {
+  const startRotate = useCallback((event: ThreePointerEvent) => {
     if (!editMode || !usesExternalAsset) return;
     rotatingRef.current = true;
     event.stopPropagation();
-    event.target?.setPointerCapture?.(event.pointerId);
+    capturePointer(event);
     onSelectForEdit?.(node);
   }, [editMode, node, onSelectForEdit, usesExternalAsset]);
-  const moveRotate = useCallback((event: any) => {
+  const moveRotate = useCallback((event: ThreePointerEvent) => {
     if (!rotatingRef.current || !editMode || !usesExternalAsset) return;
     event.stopPropagation();
     const dx = event.point.x - node.position[0];
@@ -1412,21 +1430,21 @@ function SystemNode({
     const nextRotation: [number, number, number] = [assetRotation[0] || 0, nextHeading, assetRotation[2] || 0];
     onDraftAssetRotation?.(node.id, nextRotation);
   }, [assetRotation, editMode, node.id, node.position, onDraftAssetRotation, usesExternalAsset]);
-  const endRotate = useCallback((event: any) => {
+  const endRotate = useCallback((event: ThreePointerEvent) => {
     if (!rotatingRef.current) return;
     rotatingRef.current = false;
     event.stopPropagation();
-    event.target?.releasePointerCapture?.(event.pointerId);
+    releasePointer(event);
     onCommitAssetRotation?.(node.id);
   }, [node.id, onCommitAssetRotation]);
-  const startScale = useCallback((event: any) => {
+  const startScale = useCallback((event: ThreePointerEvent) => {
     if (!editMode || !usesExternalAsset) return;
     scalingRef.current = true;
     event.stopPropagation();
-    event.target?.setPointerCapture?.(event.pointerId);
+    capturePointer(event);
     onSelectForEdit?.(node);
   }, [editMode, node, onSelectForEdit, usesExternalAsset]);
-  const moveScale = useCallback((event: any) => {
+  const moveScale = useCallback((event: ThreePointerEvent) => {
     if (!scalingRef.current || !editMode || !usesExternalAsset) return;
     event.stopPropagation();
     const dx = event.point.x - node.position[0];
@@ -1435,11 +1453,11 @@ function SystemNode({
     const nextScale = THREE.MathUtils.clamp(distance / Math.max(editRingRadius, 0.0001), 0.18, 6);
     onDraftAssetScale?.(node.id, nextScale);
   }, [editMode, editRingRadius, node.id, node.position, onDraftAssetScale, usesExternalAsset]);
-  const endScale = useCallback((event: any) => {
+  const endScale = useCallback((event: ThreePointerEvent) => {
     if (!scalingRef.current) return;
     scalingRef.current = false;
     event.stopPropagation();
-    event.target?.releasePointerCapture?.(event.pointerId);
+    releasePointer(event);
     onCommitAssetScale?.(node.id);
   }, [node.id, onCommitAssetScale]);
   const solidOpacity = isLinkPlaceholder
@@ -2183,7 +2201,7 @@ function SceneRig({
   reducedMotion: boolean;
   cameraMode: CameraMode;
   focusedNode: GraphNode | null;
-  controlsRef: React.MutableRefObject<any>;
+  controlsRef: React.MutableRefObject<OrbitControlsRef | null>;
   sceneBounds: { minX: number; maxX: number; minZ: number; maxZ: number };
 }) {
   const { camera } = useThree();
@@ -2489,7 +2507,7 @@ const NexusCore = ({
   const [sentinelAssetDraft, setSentinelAssetDraft] = useState<Partial<NodeAssetStage> | null>(null);
   const [linkedSystemScanTimes, setLinkedSystemScanTimes] = useState<Record<string, number>>({});
   const audioContextRef = useRef<AudioContext | null>(null);
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<OrbitControlsRef | null>(null);
   const assetFileInputRef = useRef<HTMLInputElement>(null);
   const previousModeRef = useRef<string>('');
   const previousCommandRef = useRef<string | null>(null);
@@ -3153,8 +3171,8 @@ const NexusCore = ({
         prev.map((entry) => (entry.id === system.id ? { ...entry, entries: payload.entries || [] } : entry)),
       );
       setLinkedSystemScanTimes((prev) => ({ ...prev, [system.id]: Date.now() }));
-    } catch (error: any) {
-      setToastMsg({ msg: 'SCAN_FAILED', detail: error?.message || system.name });
+    } catch (error: unknown) {
+      setToastMsg({ msg: 'SCAN_FAILED', detail: getErrorMessage(error, system.name) });
       setTimeout(() => setToastMsg(null), 2400);
     }
   }, [setLinkedSystems]);
@@ -3242,10 +3260,10 @@ const NexusCore = ({
         setToastMsg({ msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: node.label }), detail: data.error || 'READ_ERROR' });
         setTimeout(() => setToastMsg(null), 3200);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setToastMsg({
         msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: node.label }),
-        detail: error?.message || 'READ_ERROR',
+        detail: getErrorMessage(error, 'READ_ERROR'),
       });
       setTimeout(() => setToastMsg(null), 3200);
     }
@@ -3300,8 +3318,8 @@ const NexusCore = ({
         }
         throw new Error(payload?.error || 'ASSET_NODE_PATCH_ERROR');
       })
-      .catch((error: any) => {
-        setToastMsg({ msg: 'ASSET_EDIT_FAILURE', detail: error?.message || 'ASSET_NODE_PATCH_ERROR' });
+      .catch((error: unknown) => {
+        setToastMsg({ msg: 'ASSET_EDIT_FAILURE', detail: getErrorMessage(error, 'ASSET_NODE_PATCH_ERROR') });
         setTimeout(() => setToastMsg(null), 2600);
       });
   }, []);
@@ -3420,8 +3438,8 @@ const NexusCore = ({
         }
         throw new Error(payload?.error || 'SENTINEL_ASSET_PATCH_ERROR');
       })
-      .catch((error: any) => {
-        setToastMsg({ msg: 'SENTINEL_EDIT_FAILURE', detail: error?.message || 'SENTINEL_ASSET_PATCH_ERROR' });
+      .catch((error: unknown) => {
+        setToastMsg({ msg: 'SENTINEL_EDIT_FAILURE', detail: getErrorMessage(error, 'SENTINEL_ASSET_PATCH_ERROR') });
         setTimeout(() => setToastMsg(null), 2600);
       });
   }, []);
@@ -3487,8 +3505,8 @@ const NexusCore = ({
           setTimeout(() => setToastMsg(null), 3200);
         }
       })
-      .catch((error: any) => {
-        setToastMsg({ msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: selectedNode.label }), detail: error?.message || 'ASSET_CLEAR_ERROR' });
+      .catch((error: unknown) => {
+        setToastMsg({ msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: selectedNode.label }), detail: getErrorMessage(error, 'ASSET_CLEAR_ERROR') });
         setTimeout(() => setToastMsg(null), 3200);
       });
   }, [selectedNode, t]);
@@ -3531,8 +3549,8 @@ const NexusCore = ({
           setTimeout(() => setToastMsg(null), 3200);
         }
       })
-      .catch((error: any) => {
-        setToastMsg({ msg: 'GLB_LINK_FAILURE', detail: error?.message || 'ASSET_UPLOAD_ERROR' });
+      .catch((error: unknown) => {
+        setToastMsg({ msg: 'GLB_LINK_FAILURE', detail: getErrorMessage(error, 'ASSET_UPLOAD_ERROR') });
         setTimeout(() => setToastMsg(null), 3200);
       })
       .finally(() => {
@@ -3575,8 +3593,8 @@ const NexusCore = ({
           setTimeout(() => setToastMsg(null), 3200);
         }
       })
-      .catch((error: any) => {
-        setToastMsg({ msg: '3D_ASSET_PROCESS_FAILURE', detail: error?.message || 'CANONICAL_ASSET_PROCESS_ERROR' });
+      .catch((error: unknown) => {
+        setToastMsg({ msg: '3D_ASSET_PROCESS_FAILURE', detail: getErrorMessage(error, 'CANONICAL_ASSET_PROCESS_ERROR') });
         setTimeout(() => setToastMsg(null), 3200);
       })
       .finally(() => {
@@ -3615,13 +3633,13 @@ const NexusCore = ({
           content: String(payload.reply || 'NO_RESPONSE'),
         },
       ]);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setChatMessages((prev) => [
         ...prev,
         {
           id: `assistant-error-${Date.now()}`,
           role: 'assistant',
-          content: `LINK FAILURE // ${error?.message || 'CHAT_BRIDGE_FAILURE'}`,
+          content: `LINK FAILURE // ${getErrorMessage(error) || 'CHAT_BRIDGE_FAILURE'}`,
         },
       ]);
     } finally {
@@ -3844,8 +3862,8 @@ const NexusCore = ({
       });
       setToastMsg({ msg: 'EDIT_MODE_SESSION_SAVED', detail: 'LAYOUT_AND_ASSET_TRANSFORMS_COMMITTED' });
       setTimeout(() => setToastMsg(null), 2400);
-    } catch (error: any) {
-      setToastMsg({ msg: 'EDIT_MODE_SAVE_FAILURE', detail: error?.message || 'EDIT_MODE_SESSION_SYNC_ERROR' });
+    } catch (error: unknown) {
+      setToastMsg({ msg: 'EDIT_MODE_SAVE_FAILURE', detail: getErrorMessage(error, 'EDIT_MODE_SESSION_SYNC_ERROR') });
       setTimeout(() => setToastMsg(null), 2800);
     }
   }, [effectiveFamilyAssetOverrides, effectiveNodeAssetOverrides, persistEditModeSession]);
@@ -3859,8 +3877,8 @@ const NexusCore = ({
       });
       setToastMsg({ msg: 'EDIT_MODE_SESSION_REVERTED', detail: 'SESSION_ROLLED_BACK_TO_ENTRY_STATE' });
       setTimeout(() => setToastMsg(null), 2400);
-    } catch (error: any) {
-      setToastMsg({ msg: 'EDIT_MODE_REVERT_FAILURE', detail: error?.message || 'EDIT_MODE_SESSION_SYNC_ERROR' });
+    } catch (error: unknown) {
+      setToastMsg({ msg: 'EDIT_MODE_REVERT_FAILURE', detail: getErrorMessage(error, 'EDIT_MODE_SESSION_SYNC_ERROR') });
       setTimeout(() => setToastMsg(null), 2800);
     }
   }, [editModeSessionBaseline, persistEditModeSession]);
@@ -4048,7 +4066,7 @@ const NexusCore = ({
 
         {/* TARGET ACQUISITION RETICLE & DATA BRIDGE */}
         {hoveredNode && (
-          <group position={hoveredNode.position as any}>
+          <group position={hoveredNode.position}>
              <mesh rotation={[0, 0, Math.PI / 4]}>
                 <ringGeometry args={[1.2, 1.25, 4]} />
                 <meshBasicMaterial color={hoveredNode.color} transparent opacity={0.4} />
@@ -4694,7 +4712,7 @@ const NexusCore = ({
           }}>
           <div style={{ padding: '15px 25px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: signals.palette.panelSoft, gap: '16px' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', minWidth: 0 }}>
-              <span style={{ fontSize: '0.7rem', letterSpacing: '4px', fontWeight: 800, fontFamily: 'var(--font-mono)', opacity: 0.72 }}>{tt(t, 'viewer.decrypting_stream', 'DECRYPTING_STREAM')} // {openDoc.fileName}</span>
+              <span style={{ fontSize: '0.7rem', letterSpacing: '4px', fontWeight: 800, fontFamily: 'var(--font-mono)', opacity: 0.72 }}>{tt(t, 'viewer.decrypting_stream', 'DECRYPTING_STREAM')} {'//'} {openDoc.fileName}</span>
               <span style={{ ...overlaySoftText, fontSize: '0.46rem', letterSpacing: '2px' }}>{modeReasonText}</span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.44rem', letterSpacing: '1.8px', color: 'rgba(255,255,255,0.66)' }}>
                 <span>{tt(t, 'viewer.path', 'PATH')}: {openDoc.filePath}</span>
@@ -4816,3 +4834,6 @@ interface NexusCoreProps {
 }
 
 export default NexusCore;
+
+
+

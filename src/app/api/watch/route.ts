@@ -11,10 +11,10 @@ export async function GET(req: NextRequest) {
     start(controller) {
       const encoder = new TextEncoder();
       
-      const sendEvent = (event: string, data: any) => {
+      const sendEvent = (event: string, data: unknown) => {
         try {
           controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        } catch (e) {
+        } catch {
           // Stream might have closed
         }
       };

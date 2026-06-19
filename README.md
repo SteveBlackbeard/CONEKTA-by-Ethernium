@@ -1,6 +1,6 @@
-# Continuity Conekta
+# Conekta Dev by Ethernium
 
-**Continuity Conekta** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
+**Conekta Dev by Ethernium** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
 
 This repository was extracted from the former `nexus-dashboard/` folder in Continuity Legacy.
 
@@ -27,7 +27,7 @@ This repository was extracted from the former `nexus-dashboard/` folder in Conti
 
 ## Development
 
-Run Continuity Conekta locally from this repository:
+Run Conekta Dev locally from this repository:
 
 ```bash
 npm install
@@ -39,12 +39,16 @@ Open `http://localhost:3000`.
 Production validation:
 
 ```bash
+npm run lint
 npm run build
+npm run health
 ```
+
+`npm run health` is the release gate for this repository. It verifies the required Conekta structure, lint, and production build.
 
 ## Local AI bridge
 
-Continuity Conekta includes a `CHAT` rail that can talk to a local conversational backend through `/api/chat/bridge`.
+Conekta Dev includes a `CHAT` rail that can talk to a local conversational backend through `/api/chat/bridge`.
 
 To move Conekta by USB to another machine:
 
@@ -83,13 +87,15 @@ The bridge is intentionally local-first. Start in conversational/read-only mode,
 
 ## Package/runtime boundary
 
-Continuity Conekta should be treated as the control surface, not the source of truth for the runtime package.
+Conekta Dev should be treated as the control surface, not the source of truth for the runtime package.
 
 If you publish `ethernium-continuity-legacy` (or `lite/pro/omega`) to PyPI, keep this rule:
 
 - only claim package commands that the package CLI actually exposes
 - do not assume every dashboard button already has a one-to-one package command
 - prefer an explicit local adapter layer between dashboard and packaged runtime
+
+The adapter boundary is documented in `docs/ADAPTER_CONTRACT.md`.
 
 ## Notes
 

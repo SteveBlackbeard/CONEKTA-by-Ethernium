@@ -6,6 +6,7 @@ import { Language, LANGUAGES, LANGUAGE_NAMES, translations, translateActiveComma
 import { LinkedSystem, ScannedEntry } from '@/lib/graphData';
 import { ChainEventSnapshot, ChainStatusSnapshot, deriveDashboardSignals, StateSnapshot } from '@/lib/telemetry';
 import { listTopLevelEntriesFromHandle, registerLinkedSystemHandle, removeLinkedSystemHandle } from '@/lib/filesystemHandles';
+import { getErrorMessage } from '@/lib/errors';
 
 const DEFAULT_STATE: StateSnapshot = {
   merkle_root: "awaiting_crystallization",
@@ -28,12 +29,25 @@ interface HUDProps {
   setChainStatus: React.Dispatch<React.SetStateAction<ChainStatusSnapshot | null>>;
   activeCommand: string | null;
   setActiveCommand: React.Dispatch<React.SetStateAction<string | null>>;
-  refreshChainEvents: () => Promise<any> | void;
-  refreshSystemState: () => Promise<any> | void;
+  refreshChainEvents: () => Promise<unknown> | void;
+  refreshSystemState: () => Promise<unknown> | void;
 }
 
 type DirectoryPickerWindow = Window & {
   showDirectoryPicker?: (options?: { mode?: 'read' | 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+};
+type WebkitFile = File & { webkitRelativePath?: string };
+type DirectoryInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+  webkitdirectory: string;
+  directory: string;
+};
+
+const directoryInputProps: DirectoryInputProps = {
+  id: 'project-linker',
+  type: 'file',
+  webkitdirectory: '',
+  directory: '',
+  style: { display: 'none' },
 };
 
 const SovereignHUD = ({
@@ -142,8 +156,8 @@ const SovereignHUD = ({
     const entries: ScannedEntry[] = [];
 
     for (let i = 0; i < Math.min(files.length, 64); i++) {
-      // @ts-ignore
-      const rel = files[i].webkitRelativePath || files[i].name;
+      const file = files[i] as WebkitFile;
+      const rel = file.webkitRelativePath || file.name;
       const parts = rel.split('/');
       if (parts.length > 1 && !seen.has(parts[1])) {
         seen.add(parts[1]);
@@ -160,8 +174,8 @@ const SovereignHUD = ({
   const handleLinkProject = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      // @ts-ignore
-      const path = files[0].webkitRelativePath?.split('/')[0] || files[0].name;
+      const firstFile = files[0] as WebkitFile;
+      const path = firstFile.webkitRelativePath?.split('/')[0] || firstFile.name;
       setActiveCommand(`SCANNING_${path.toUpperCase()}`);
 
       // Try to scan the project directory via our backend
@@ -220,7 +234,7 @@ const SovereignHUD = ({
     }
 
     document.getElementById('project-linker')?.click();
-  }, [refreshChainEvents, refreshSystemState, setActiveCommand]);
+  }, [refreshChainEvents, refreshSystemState, setActiveCommand, upsertLinkedSystem]);
 
   useEffect(() => {
     const handleConfirmLink = () => {
@@ -282,8 +296,8 @@ const SovereignHUD = ({
       const res = await fetch('/api/events/verify', { method: 'POST' });
       const data = await res.json();
       setChainStatus(data);
-    } catch (e: any) {
-      setChainStatus({ intact: false, error: e.message });
+    } catch (error: unknown) {
+      setChainStatus({ intact: false, error: getErrorMessage(error) });
     }
   };
 
@@ -371,7 +385,7 @@ const SovereignHUD = ({
             </div>
             <div style={{ minWidth: 0 }}>
               <h1 className="text-gradient" style={{ fontSize: '1.25rem', fontWeight: 900, lineHeight: 1.1 }}>CONTINUITY LEGACY</h1>
-              <p style={{ ...softText, fontSize: '0.55rem', letterSpacing: '3px', textTransform: 'uppercase' }}>{t['hud.brand']} // v{state.crystallizer_version}</p>
+              <p style={{ ...softText, fontSize: '0.55rem', letterSpacing: '3px', textTransform: 'uppercase' }}>{t['hud.brand']} {'//'} v{state.crystallizer_version}</p>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '4px 8px', background: signals.palette.panelSoft, border: `1px solid ${signals.palette.border}`, boxShadow: `0 0 22px ${signals.palette.accent}14` }}>
                 <div className="pulse-dot" style={{ width: '6px', height: '6px', background: signals.palette.accent, boxShadow: `0 0 12px ${signals.palette.accent}` }} />
                 <span style={{ ...glowText, fontSize: '0.46rem', letterSpacing: '2px', color: signals.palette.emphasis }}>{modeLabelText}</span>
@@ -580,7 +594,7 @@ const SovereignHUD = ({
                     >
                       <div style={{ ...glowText, fontSize: '0.55rem', letterSpacing: '1.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{system.name}</div>
                       <div style={{ ...softText, fontSize: '0.44rem', letterSpacing: '1.5px', fontFamily: 'var(--font-mono)' }}>
-                        {system.entries.length} nodes // {tt(t, `hud.access.${system.accessMode || 'runtime'}`, (system.accessMode || 'runtime').toUpperCase())} // {system.rootPath}
+                        {system.entries.length} nodes {'//'} {tt(t, `hud.access.${system.accessMode || 'runtime'}`, (system.accessMode || 'runtime').toUpperCase())} {'//'} {system.rootPath}
                       </div>
                     </button>
                     <button
@@ -667,15 +681,7 @@ const SovereignHUD = ({
       </AnimatePresence>
 
       {/* Project Linker Hidden Input */}
-      <input 
-        id="project-linker"
-        type="file" 
-        // @ts-ignore
-        webkitdirectory="" 
-        directory="" 
-        onChange={handleLinkProject} 
-        style={{ display: 'none' }} 
-      />
+      <input {...directoryInputProps} onChange={handleLinkProject} />
 
       {/* Tooltip Overlay */}
       <AnimatePresence>

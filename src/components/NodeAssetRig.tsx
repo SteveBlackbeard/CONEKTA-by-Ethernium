@@ -96,14 +96,16 @@ function AssetStageModel({
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const gltf = useGLTF(stage.src);
-  const stageRotation = stage.rotation || [0, 0, 0];
   const resolvedRotation = useMemo<[number, number, number]>(
-    () => [
+    () => {
+      const stageRotation = stage.rotation || [0, 0, 0];
+      return [
       TOP_DOWN_ASSET_ROTATION[0] + stageRotation[0],
       TOP_DOWN_ASSET_ROTATION[1] + stageRotation[1],
       TOP_DOWN_ASSET_ROTATION[2] + stageRotation[2],
-    ],
-    [stageRotation],
+      ];
+    },
+    [stage.rotation],
   );
   const { scene, normalizationScale, normalizationOffset } = useMemo(() => {
     const clonedScene = cloneSkeleton(gltf.scene);

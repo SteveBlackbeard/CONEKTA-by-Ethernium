@@ -1,52 +1,37 @@
-# HOW TO USE DASHBOARD: Nexus Control Protocol 🪐🛡️
+# How To Use Continuity Conekta
 
-**Continuity Conekta** is your sovereign control room for the Continuity Legacy framework. It bridges the gap between premium visual aesthetics and industrial-grade Python state governance.
+Continuity Conekta is the standalone visual command surface for Continuity Legacy. It is not the Python runtime and it is not bundled back into the Legacy package.
 
-## 🏛️ Mathematical Telemetry (Physics)
+## Local Development
 
-The dashboard monitors three core dimensions of your repository's "Logical mass":
+```bash
+npm install
+npm run dev
+```
 
-1.  **Entropy H(Ω)**: Measures the information density. A high entropy indicates a rich, well-documented project.
-2.  **Balance η**: Measures how logically distributed your modules are. 
-3.  **D_KL (Drift)**: This is the most critical metric. It measures the semantic distance between your current session and the previous "Crystallized" state. 
-    *   **0.000**: Perfect Parity.
-    *   **> 0.500**: Moderate Drift (Audit recommended).
+Open `http://localhost:3000`.
 
----
+## Health Gate
 
-## 🕹️ Operational Protocols (Buttons)
+Before pushing or publishing the repo:
 
-The HUD buttons are now connected to the **Industrial Python Engine** in your `.github/scripts/` folder.
+```bash
+npm run health
+```
 
-### 1. [Zap] SYNTH_DNA
-*   **Action**: Triggers `crystallize.py`.
-*   **Result**: Scans all canonical files, calculates the new Merkle Root, and updates your `STATE.json`.
-*   **Use Case**: Run this after a major coding session to "Lock in" your progress for the next IA session.
+The health gate checks required files, lint, and production build.
 
-### 2. [Activity] AUDIT_PHYSICS
-*   **Action**: Triggers `audit_comparison.py`.
-*   **Result**: Scans for Dead Links, Mojibake (Encoding errors), and Tonal Drift in your markdown files.
-*   **Use Case**: Run this before a Git Push to ensure your repository follows industrial standards.
+## Runtime Boundary
 
-### 3. [Lock] SEAL_VAULT
-*   **Action**: Triggers `setup_guardian.py`.
-*   **Result**: Re-installs the "Sentinel" (Git-Hooks) and ensures your local environment is sealed against unauthorized mutability.
-*   **Use Case**: Run this when moving the project to a new machine or after a system update.
+Conekta reads local Continuity Legacy artifacts such as `STATE.json`, event-chain data, linked-system structure, and optional local adapter responses. If a runtime artifact is missing, Conekta should show an explicit degraded state rather than pretending the action succeeded.
 
-### 4. [Shield] OPEN_SOVEREIGN
-*   **Action**: Primary Access Protocol.
-*   **Result**: Symbolically unlocks the dashboard for interaction.
+The adapter rules are defined in `ADAPTER_CONTRACT.md`.
 
----
+## Operational Buttons
 
-## 🧊 Modular Cluster Status
-The sidebar indicators show the real-time status of your PyPI distribution nodes:
-*   **LITE**: Minimal developer node.
-*   **PRO**: Industrial security node.
-*   **OMEGA**: Enterprise RAG/Graph node.
+- `SYNTH_DNA`: intended crystallization action through an explicit local adapter.
+- `AUDIT_PHYSICS`: intended audit action through an explicit local adapter.
+- `SEAL_VAULT`: intended guardian/seal action through an explicit local adapter.
+- `ACCESS`: links local systems for visualization and read-only inspection when the browser/runtime can access them.
 
-> [!TIP]
-> **PRO TIP:** If the HUD shows `SEVERE_DRIFT`, click **SYNTH_DNA** to synchronize your logical lineage.
-
----
-*Continuity Legacy: Protecting the logical lineage of your software.*
+Only claim a button as fully operational when the corresponding adapter exists and has been verified against the current Continuity Legacy runtime.
