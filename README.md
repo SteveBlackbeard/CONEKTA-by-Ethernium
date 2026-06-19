@@ -1,6 +1,6 @@
-# Conekta Dev by Ethernium
+# CONEKTA
 
-**Conekta Dev by Ethernium** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
+**CONEKTA** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
 
 This repository was extracted from the former `nexus-dashboard/` folder in Continuity Legacy.
 
@@ -27,7 +27,7 @@ This repository was extracted from the former `nexus-dashboard/` folder in Conti
 
 ## Development
 
-Run Conekta Dev locally from this repository:
+Run CONEKTA locally from this repository:
 
 ```bash
 npm install
@@ -48,7 +48,7 @@ npm run health
 
 ## Local AI bridge
 
-Conekta Dev includes a `CHAT` rail that can talk to a local conversational backend through `/api/chat/bridge`.
+CONEKTA includes a `CHAT` rail that can talk to a local conversational backend through `/api/chat/bridge`.
 
 To move Conekta by USB to another machine:
 
@@ -87,7 +87,7 @@ The bridge is intentionally local-first. Start in conversational/read-only mode,
 
 ## Package/runtime boundary
 
-Conekta Dev should be treated as the control surface, not the source of truth for the runtime package.
+CONEKTA should be treated as the control surface, not the source of truth for the runtime package.
 
 If you publish `ethernium-continuity-legacy` (or `lite/pro/omega`) to PyPI, keep this rule:
 
