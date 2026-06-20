@@ -1,6 +1,6 @@
-# CONEKTA
+# CONEKTA by Ethernium
 
-**CONEKTA** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
+**CONEKTA by Ethernium** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
 
 This repository was extracted from the former `nexus-dashboard/` folder in Continuity Legacy.
 
