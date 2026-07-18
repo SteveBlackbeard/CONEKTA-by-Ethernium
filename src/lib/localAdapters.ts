@@ -1,4 +1,4 @@
-type AdapterProvider = 'ollama' | 'openclaw' | 'moltbot';
+type AdapterProvider = 'ollama' | 'openclaw' | 'moltbot' | 'frugal';
 
 type AdapterConfig = {
   enabled: boolean;
@@ -48,6 +48,14 @@ export function getAdapterConfig(provider: AdapterProvider): AdapterConfig {
     };
   }
 
+  if (provider === 'frugal') {
+    return {
+      enabled: readBool(process.env.CONTINUITY_FRUGAL_ENABLED, true),
+      baseUrl: normalizeUrl(process.env.CONTINUITY_FRUGAL_BASE_URL) || 'http://127.0.0.1:3369',
+      timeoutMs: readInt(process.env.CONTINUITY_FRUGAL_TIMEOUT_MS, 45000),
+    };
+  }
+
   if (provider === 'openclaw') {
     return {
       enabled: readBool(process.env.CONTINUITY_OPENCLAW_ENABLED, false),
@@ -66,7 +74,7 @@ export function getAdapterConfig(provider: AdapterProvider): AdapterConfig {
 }
 
 export function getAdapterStatuses(): AdapterStatus[] {
-  return (['ollama', 'openclaw', 'moltbot'] as AdapterProvider[]).map((provider) => {
+  return (['frugal', 'ollama', 'openclaw', 'moltbot'] as AdapterProvider[]).map((provider) => {
     const config = getAdapterConfig(provider);
     return {
       provider,
@@ -86,6 +94,49 @@ function buildTimeoutSignal(timeoutMs: number) {
     signal: controller.signal,
     dispose: () => clearTimeout(timer),
   };
+}
+
+export type FrugalChatResult = {
+  status?: 'success' | 'degraded' | 'blocked';
+  mode?: string;
+  response?: string;
+  result_class?: string;
+  acted_on?: unknown[];
+  next?: string;
+};
+
+/**
+ * Talks to a local Ethernium Frugal instance (POST /chat on its interface
+ * server). Frugal answers most intents locally (L1/L2) and only escalates to
+ * a neural model when needed, so this is the cheapest bridge provider.
+ */
+export async function invokeFrugalChat(message: string, options?: { explain?: boolean; mode?: string }) {
+  const config = getAdapterConfig('frugal');
+  if (!config.enabled || !config.baseUrl) {
+    throw new Error('FRUGAL_ADAPTER_NOT_ENABLED');
+  }
+
+  const timeout = buildTimeoutSignal(config.timeoutMs);
+  try {
+    const response = await fetch(`${config.baseUrl}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        mode: options?.mode || 'agent',
+        explain: Boolean(options?.explain),
+      }),
+      signal: timeout.signal,
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as FrugalChatResult & { error?: string };
+    if (!response.ok) {
+      throw new Error(payload?.error || `FRUGAL_HTTP_${response.status}`);
+    }
+    return payload;
+  } finally {
+    timeout.dispose();
+  }
 }
 
 export async function invokeOllamaChat(messages: OllamaChatMessage[]) {

@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
-import { forwardBridgePayload, getAdapterStatuses, getAdapterConfig, invokeOllamaChat } from '@/lib/localAdapters';
+import { forwardBridgePayload, getAdapterStatuses, getAdapterConfig, invokeFrugalChat, invokeOllamaChat } from '@/lib/localAdapters';
 import { getErrorMessage } from '@/lib/errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function resolveProvider(input?: string | null) {
-  const raw = (input || process.env.CONTINUITY_CHAT_PROVIDER || 'openclaw').toLowerCase().trim();
+  const raw = (input || process.env.CONTINUITY_CHAT_PROVIDER || 'frugal').toLowerCase().trim();
   if (raw === 'ollama') return 'ollama' as const;
   if (raw === 'moltbot') return 'moltbot' as const;
-  return 'openclaw' as const;
+  if (raw === 'openclaw') return 'openclaw' as const;
+  return 'frugal' as const;
 }
 
 export async function GET() {
@@ -30,6 +31,21 @@ export async function POST(request: Request) {
 
     if (!prompt) {
       return NextResponse.json({ success: false, error: 'Missing prompt' }, { status: 400 });
+    }
+
+    if (provider === 'frugal') {
+      const result = await invokeFrugalChat(prompt, { explain: Boolean(body?.explain) });
+      const reply = [result?.response || 'NO_RESPONSE', result?.next ? `NEXT // ${result.next}` : '']
+        .filter(Boolean)
+        .join('\n');
+      return NextResponse.json({
+        success: true,
+        provider,
+        reply,
+        status: result?.status || 'success',
+        mode: result?.mode || null,
+        raw: result,
+      });
     }
 
     if (provider === 'ollama') {

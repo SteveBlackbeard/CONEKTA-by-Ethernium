@@ -58,6 +58,7 @@ To move Conekta by USB to another machine:
 1. Copy the repo.
 2. Copy `.env.example` to `.env.local`.
 3. Set `CONTINUITY_CHAT_PROVIDER` to one of:
+   - `frugal` (default — Ethernium Frugal cognitive kernel on port 3369)
    - `openclaw`
    - `ollama`
    - `moltbot`
@@ -67,6 +68,19 @@ To move Conekta by USB to another machine:
 ```bash
 npm install
 npm run start
+```
+
+Example `Ethernium Frugal` setup (recommended — answers most intents locally
+without an LLM, with provenance and distillation):
+
+```bash
+# In the Ethernium Frugal repo:
+npm run api          # interface server on http://127.0.0.1:3369
+
+# In .env.local (these are already the defaults):
+CONTINUITY_CHAT_PROVIDER=frugal
+CONTINUITY_FRUGAL_ENABLED=true
+CONTINUITY_FRUGAL_BASE_URL=http://127.0.0.1:3369
 ```
 
 Example `Ollama` setup:
