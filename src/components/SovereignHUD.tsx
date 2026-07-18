@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Shield, Zap, Activity, Lock, Terminal, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Language, LANGUAGES, LANGUAGE_NAMES, translations, translateActiveCommand, translateModeLabel, translateReason, translateTrust, tt } from '@/lib/i18n';
+import { Language, LANGUAGES, LANGUAGE_NAMES, translations, translateActiveCommand, translateModeLabel, translateReason, tt } from '@/lib/i18n';
 import { LinkedSystem, ScannedEntry } from '@/lib/graphData';
 import { ChainEventSnapshot, ChainStatusSnapshot, deriveDashboardSignals, StateSnapshot } from '@/lib/telemetry';
 import { listTopLevelEntriesFromHandle, registerLinkedSystemHandle, removeLinkedSystemHandle } from '@/lib/filesystemHandles';
@@ -10,10 +10,10 @@ import { getErrorMessage } from '@/lib/errors';
 
 const DEFAULT_STATE: StateSnapshot = {
   merkle_root: "awaiting_crystallization",
-  last_check: new Date().toISOString(),
   physics: { H: 0, H_max: 0, eta: 0, N: 0, W: 0, gini: 0 },
   drift_kl: 0,
-  crystallizer_version: "3.0.1",
+  crystallizer_version: null,
+  available: false,
 };
 
 interface HUDProps {
@@ -69,7 +69,10 @@ const SovereignHUD = ({
   const state = externalState || DEFAULT_STATE;
   const [hoveredItem, setHoveredItem] = useState<{ id: string; text: string; x: number; y: number } | null>(null);
   const [langOpen, setLangOpen] = useState(false);
-  const [nexusReady, setNexusReady] = useState(false);
+  const [nexusReady, setNexusReady] = useState(
+    // Covers remounts that happen after NexusCore already announced readiness.
+    () => typeof window !== 'undefined' && (window as Window & { __NEXUS_CORE_READY?: boolean }).__NEXUS_CORE_READY === true,
+  );
   const [sceneError, setSceneError] = useState<string | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [viewportWidth, setViewportWidth] = useState(1440);
@@ -116,7 +119,7 @@ const SovereignHUD = ({
 
   const createSystemId = (name: string) => `system-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now().toString(36)}`;
 
-  const upsertLinkedSystem = (
+  const upsertLinkedSystem = useCallback((
     systemName: string,
     rootPath: string,
     entries: ScannedEntry[],
@@ -140,15 +143,13 @@ const SovereignHUD = ({
     });
     setActiveLinkedSystemId(nextSystem.id);
     return nextSystem.id;
-  };
+  }, [linkedSystems, setActiveLinkedSystemId, setLinkedSystems]);
 
   const unlinkSystem = (systemId: string) => {
     removeLinkedSystemHandle(systemId);
-    setLinkedSystems((prev) => {
-      const remaining = prev.filter((system) => system.id !== systemId);
-      setActiveLinkedSystemId((current) => current === systemId ? (remaining[0]?.id || null) : current);
-      return remaining;
-    });
+    const remaining = linkedSystems.filter((system) => system.id !== systemId);
+    setLinkedSystems(remaining);
+    setActiveLinkedSystemId((current) => current === systemId ? (remaining[0]?.id || null) : current);
   };
 
   const deriveStructuralEntries = (files: FileList) => {
@@ -188,7 +189,7 @@ const SovereignHUD = ({
         const data = await res.json();
         if (data.success) {
           const projectName = data.output?.match(/ROOT DIRECTORY:\s*([^\n]+)/)?.[1] || path;
-          const systemId = upsertLinkedSystem(projectName, path, data.entries || [], 'runtime');
+          const systemId = upsertLinkedSystem(projectName, data.rootPath || path, data.entries || [], 'runtime');
           removeLinkedSystemHandle(systemId);
           setTimeout(() => {
             refreshChainEvents();
@@ -311,7 +312,6 @@ const SovereignHUD = ({
   }), [activeCommand, chainEvents, chainStatus, linkedSystems.length, primaryLinkedSystem?.name, state]);
   const modeLabelText = translateModeLabel(signals.modeLabel, t);
   const modeReasonText = translateReason(signals.modeReason, t);
-  const chainTrustText = translateTrust(signals.chainTrustLabel, t);
   const activeCommandText = translateActiveCommand(activeCommand, t);
   const sendNexusEvent = useCallback((name: 'NEXUS_RESET_VIEW' | 'NEXUS_FOCUS_CORE') => {
     if (typeof window === 'undefined') return;
@@ -375,6 +375,8 @@ const SovereignHUD = ({
             >
               <div style={{ position: 'absolute', inset: '-5px', borderRadius: '18px', border: `1px solid ${signals.palette.border}`, opacity: 0.42 }} />
               <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000', borderRadius: '12px', overflow: 'hidden' }}>
+                {/* Static 48px local brand mark; next/image optimization adds no value here. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/assets/branding/dawdad.png"
                   alt="Ethernium mark"
@@ -385,7 +387,7 @@ const SovereignHUD = ({
             </div>
             <div style={{ minWidth: 0 }}>
               <h1 className="text-gradient" style={{ fontSize: '1.25rem', fontWeight: 900, lineHeight: 1.1 }}>CONTINUITY LEGACY</h1>
-              <p style={{ ...softText, fontSize: '0.55rem', letterSpacing: '3px', textTransform: 'uppercase' }}>{t['hud.brand']} {'//'} v{state.crystallizer_version}</p>
+              <p style={{ ...softText, fontSize: '0.55rem', letterSpacing: '3px', textTransform: 'uppercase' }}>{t['hud.brand']} {'//'} {state.crystallizer_version ? `v${state.crystallizer_version}` : 'STANDALONE'}</p>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '4px 8px', background: signals.palette.panelSoft, border: `1px solid ${signals.palette.border}`, boxShadow: `0 0 22px ${signals.palette.accent}14` }}>
                 <div className="pulse-dot" style={{ width: '6px', height: '6px', background: signals.palette.accent, boxShadow: `0 0 12px ${signals.palette.accent}` }} />
                 <span style={{ ...glowText, fontSize: '0.46rem', letterSpacing: '2px', color: signals.palette.emphasis }}>{modeLabelText}</span>

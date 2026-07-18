@@ -1,2457 +1,48 @@
-﻿"use client";
+"use client";
 import React, { useRef, useMemo, useState, useCallback, useEffect, useDeferredValue } from 'react';
-import { Canvas, useFrame, extend, ThreeElement, useThree, ThreeEvent } from '@react-three/fiber';
-import { Points, PointMaterial, Octahedron, Sphere, OrbitControls, Text, Html } from '@react-three/drei';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-const { MOUSE } = THREE;
-import { CoreShaderMaterial, BeamShaderMaterial } from './shaders/CoreShader';
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { buildStaticGraph, buildProjectNodes, GraphNode, GraphEdge, LinkedSystem, NodeCluster, GRAPH_CLUSTER_CONFIG, GraphNodeAssetOverride, GraphNodeAssetStageOverride } from '@/lib/graphData';
-import { getNodeAssetProfile, getNodeAssetSource, getSentinelAssetProfile, nodeUsesExternalAsset, NodeAssetFamilyOverrides, NodeAssetProfile, NodeAssetStage } from '@/lib/nodeAssets';
-import { createNodeGlyphTexture, DocumentGlyphKind } from '@/lib/nodeGlyphTextures';
-import { Language, translations, translateActiveCommand, translateModeLabel, translateReason, translateSeverity, translateTrust, tt } from '@/lib/i18n';
-import { ChainEventSnapshot, ChainStatusSnapshot, DashboardSignals, deriveDashboardSignals, PhysicsSnapshot } from '@/lib/telemetry';
+import { buildStaticGraph, buildProjectNodes, GraphNode, GraphEdge, LinkedSystem, NodeCluster, GRAPH_CLUSTER_CONFIG, GraphNodeAssetOverride } from '@/lib/graphData';
+import { getNodeAssetProfile, getSentinelAssetProfile, NodeAssetFamilyOverrides, NodeAssetStage } from '@/lib/nodeAssets';
+import { Language, translations, translateActiveCommand, translateModeLabel, translateReason, tt } from '@/lib/i18n';
+import { ChainEventSnapshot, ChainStatusSnapshot, deriveDashboardSignals, PhysicsSnapshot } from '@/lib/telemetry';
 import { readHandleBackedFile, removeLinkedSystemHandle } from '@/lib/filesystemHandles';
 import { getErrorMessage } from '@/lib/errors';
-import NodeAssetRig from './NodeAssetRig';
-
-type QualityTier = 'ultra' | 'balanced' | 'safe';
-type OpenDocState = { fileName: string; filePath: string; content: string; truncated: boolean };
-type ChatMessage = { id: string; role: 'user' | 'assistant' | 'system'; content: string };
-type CameraMode = 'overview' | 'focus' | 'manual';
-type ZoomTier = 'detail' | 'cluster' | 'overview';
-type MerkleReplayEntry = { id: number; hash: string; eventType: string; chainTrust: number; drift: number; timestamp: number };
-type AggregateBadge = {
-  id: string;
-  parentId: string;
-  label: string;
-  count: number;
-  color: string;
-  cluster: Exclude<NodeCluster, 'linked-root'>;
-  position: [number, number, number];
-  active: boolean;
-};
-
-type AssetStageSlot = 'appearance' | 'effect';
-type NodeAccessMode = LinkedSystem['accessMode'] | 'none';
-type NodeCapabilityKind = 'engine' | 'document' | 'folder' | 'system' | 'access' | 'passive';
-type NodeCapabilities = {
-  kind: NodeCapabilityKind;
-  accessMode: NodeAccessMode;
-  system: LinkedSystem | null;
-  canExecute: boolean;
-  canOpenDocument: boolean;
-  canAssignAsset: boolean;
-  canClearAsset: boolean;
-  canFocus: boolean;
-  blockReason: string | null;
-};
-
-type DockCommandItem = {
-  id: string;
-  label: string;
-  onClick: () => void;
-  visible?: boolean;
-  active?: boolean;
-  tone?: 'default' | 'accent' | 'warning';
-};
-
-type NodeAssetEditState = {
-  enabled: boolean;
-};
-
-type EditModeSessionBaseline = {
-  overrides: Record<string, GraphNodeAssetOverride>;
-  familyProfiles: NodeAssetFamilyOverrides;
-};
-
-const EDIT_MODE_SECRET_CODES = [
-  83, 73, 67, 77, 86, 78, 68, 86, 83, 67, 82, 69, 65, 84, 86, 83, 69, 83, 84,
-] as const;
-
-type PendingAssetTarget =
-  | { nodeId: string; slot: AssetStageSlot; family?: undefined }
-  | { family: 'sentinel'; slot: AssetStageSlot; nodeId?: undefined };
-type ThreePointerEvent = ThreeEvent<PointerEvent>;
-type OrbitControlsRef = OrbitControlsImpl;
-type BeamMaterialRef = THREE.ShaderMaterial & {
-  u_time: number;
-  u_color: THREE.Color;
-};
-
-function capturePointer(event: ThreePointerEvent) {
-  const target = event.target as EventTarget & { setPointerCapture?: (pointerId: number) => void };
-  target.setPointerCapture?.(event.pointerId);
-}
-
-function releasePointer(event: ThreePointerEvent) {
-  const target = event.target as EventTarget & { releasePointerCapture?: (pointerId: number) => void };
-  target.releasePointerCapture?.(event.pointerId);
-}
-
-function mergeGraphNodeAssetOverride(
-  base?: GraphNodeAssetOverride,
-  draft?: GraphNodeAssetOverride,
-): GraphNodeAssetOverride | undefined {
-  if (!base && !draft) return undefined;
-  const mergedAppearance = (base?.appearance || draft?.appearance)
-    ? {
-        ...(base?.appearance || {}),
-        ...(draft?.appearance || {}),
-      }
-    : undefined;
-  const mergedEffect = (base?.effect || draft?.effect)
-    ? {
-        ...(base?.effect || {}),
-        ...(draft?.effect || {}),
-      }
-    : undefined;
-  return {
-    ...base,
-    ...draft,
-    appearance: mergedAppearance?.src ? (mergedAppearance as GraphNodeAssetStageOverride) : base?.appearance,
-    effect: mergedEffect?.src ? (mergedEffect as GraphNodeAssetStageOverride) : base?.effect,
-  };
-}
-
-function deriveZoomTier(zoom: number): ZoomTier {
-  if (zoom >= 34) return 'detail';
-  if (zoom >= 24) return 'cluster';
-  return 'overview';
-}
-
-function inferAggregateCluster(node: GraphNode): Exclude<NodeCluster, 'linked-root'> {
-  if (node.cluster && node.cluster !== 'linked-root') return node.cluster;
-
-  if (node.type === 'folder') return 'system';
-
-  const lower = node.label.toLowerCase();
-  if (lower.endsWith('.md') || lower.endsWith('.txt') || lower.endsWith('.pdf')) return 'documents';
-  if (lower.endsWith('.py') || lower.endsWith('.json') || lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.js') || lower.endsWith('.sh')) {
-    return 'tools';
-  }
-  return 'system';
-}
-
-function shouldRenderNodeForZoomTier(
-  node: GraphNode,
-  zoomTier: ZoomTier,
-  highlightedIds: Set<string>,
-) {
-  if (highlightedIds.has(node.id)) return true;
-  return true;
-}
-
-function shouldRenderNodeLabel(
-  node: GraphNode,
-  zoomTier: ZoomTier,
-  hovered: boolean,
-  isSelected: boolean,
-) {
-  if (hovered || isSelected) return true;
-
-  if (zoomTier === 'detail') {
-    return node.type === 'core' || node.type === 'engine' || node.type === 'edition' || node.type === 'module';
-  }
-
-  if (zoomTier === 'cluster') {
-    return node.type === 'core' || node.type === 'engine' || node.type === 'edition' || node.type === 'module';
-  }
-
-  return node.type === 'core' || node.type === 'edition' || node.cluster === 'linked-root';
-}
-
-// SOVEREIGN SIDE RAIL
-function WaveMonitor({
-  drift,
-  eta,
-  merkle,
-  logs,
-  chainEvents,
-  signals,
-  sessionStart,
-  dictionary,
-  physics,
-  linkedSystems,
-  primaryLinkedSystem,
-  activeVectorText,
-  topReplay,
-  qualityTier,
-  audioArmed,
-  reducedMotion,
-  open,
-  onToggle,
-}: {
-  drift: number;
-  eta: number;
-  merkle: string;
-  logs: { id: number; msg: string }[];
-  chainEvents: ChainEventSnapshot[];
-  signals: DashboardSignals;
-  sessionStart: number;
-  dictionary: Record<string, string>;
-  physics: PhysicsSnapshot;
-  linkedSystems: LinkedSystem[];
-  primaryLinkedSystem: LinkedSystem | null;
-  activeVectorText: string;
-  topReplay: MerkleReplayEntry[];
-  qualityTier: QualityTier;
-  audioArmed: boolean;
-  reducedMotion: boolean;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null!);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [viewportWidth, setViewportWidth] = useState(1440);
-  const normalizedDrift = Math.max(0, Math.min(1, drift));
-  const normalizedEta = Math.max(0, Math.min(1, eta));
-  const quadrantSync = Math.max(0, Math.min(100, ((normalizedEta * 0.72) + ((1 - normalizedDrift) * 0.28)) * 100));
-  const latencyMs = (
-    0.72
-    + normalizedDrift * 7.5
-    + (1 - normalizedEta) * 2.4
-    + Math.abs(Math.sin(elapsedSeconds * 0.7)) * 0.38
-  ).toFixed(3);
-  const palette = signals.palette;
-  const latestChainEvent = chainEvents[0];
-  const syncColor = quadrantSync < 80 ? palette.warning : quadrantSync < 92 ? palette.secondary : palette.emphasis;
-  const glowText = { color: palette.emphasis, textShadow: `0 0 18px ${palette.secondary}22` } as const;
-  const softText = { color: 'rgba(255,255,255,0.76)', textShadow: `0 0 12px ${palette.secondary}18` } as const;
-  const faintText = { color: 'rgba(255,255,255,0.52)' } as const;
-  const isTablet = viewportWidth < 1180;
-  const isPhone = viewportWidth < 780;
-  const railTop = isPhone ? 104 : isTablet ? 132 : 148;
-  const railBottom = isPhone ? 14 : 18;
-  const tabWidth = isPhone ? 34 : 38;
-  const railWidth = isPhone ? 220 : isTablet ? 252 : 286;
-  const canvasHeight = isPhone ? 84 : isTablet ? 96 : 112;
-  const canvasWidth = isPhone ? 188 : isTablet ? 214 : 248;
-  const modeLabelText = translateModeLabel(signals.modeLabel, dictionary);
-  const modeReasonText = translateReason(signals.modeReason, dictionary);
-  const chainTrustText = translateTrust(signals.chainTrustLabel, dictionary);
-  const severityText = translateSeverity(signals.severityLabel, dictionary);
-  const entropyBars = useMemo(
-    () => Array.from({ length: 14 }, (_, index) => Math.abs(Math.sin(elapsedSeconds * 0.22 + index * 0.78 + physics.eta * 2.8))),
-    [elapsedSeconds, physics.eta],
-  );
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsedSeconds((Date.now() - sessionStart) / 1000);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [sessionStart]);
-
-  useEffect(() => {
-    const updateViewport = () => setViewportWidth(window.innerWidth);
-    updateViewport();
-    window.addEventListener('resize', updateViewport);
-    return () => window.removeEventListener('resize', updateViewport);
-  }, []);
-
-  useEffect(() => {
-    let frame = 0;
-    let disposed = false;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !ctx) return;
-
-    const render = () => {
-      if (disposed) return;
-      const liveCanvas = canvasRef.current;
-      if (!liveCanvas) return;
-      const { width, height } = liveCanvas;
-      ctx.clearRect(0, 0, width, height);
-      const t = Date.now() / 1000;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      ctx.beginPath();
-      ctx.strokeStyle = signals.mode === 'INCIDENT' ? palette.warning : palette.secondary;
-      ctx.lineWidth = 3.5;
-      ctx.shadowBlur = 18;
-      ctx.shadowColor = palette.secondary;
-      ctx.globalAlpha = 0.18;
-      for (let x = 0; x < width; x++) {
-        const field = Math.sin(x * 0.045 + t * 1.3) * (height * 0.18) + Math.cos(x * 0.012 - t * 0.86) * (6 + drift * 12);
-        const y = height * 0.5 + field;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.strokeStyle = palette.emphasis;
-      ctx.lineWidth = 2.2;
-      ctx.shadowBlur = 12;
-      ctx.shadowColor = palette.emphasis;
-      ctx.globalAlpha = 0.88;
-      for (let x = 0; x < width; x++) {
-        const wobble = Math.sin(x * 0.08 + t * 4.2) * (8 + eta * 10);
-        const noise = Math.cos(x * 0.03 - t * 1.4) * drift * 8;
-        const y = height * 0.5 + wobble + noise;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = palette.line;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.22;
-      for (let x = 0; x < width; x++) {
-        const y = height * 0.5 + Math.cos(x * (0.06 + eta * 0.03) + t * 3.2) * (5 + eta * 6);
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-
-      if (!disposed) frame = requestAnimationFrame(render);
-    };
-
-    render();
-    return () => {
-      disposed = true;
-      cancelAnimationFrame(frame);
-    };
-  }, [drift, eta, palette.emphasis, palette.line, palette.secondary, palette.warning, signals.mode]);
-
-  return (
-    <div style={{ position: 'absolute', top: railTop, right: 0, bottom: railBottom, width: railWidth + tabWidth, zIndex: 500, pointerEvents: 'none' }}>
-      <button
-        onClick={onToggle}
-        className="btn-nexus"
-        style={{
-          position: 'absolute',
-          right: railWidth - 1,
-          top: '50%',
-          transform: 'translateY(-50%)',
-          transformOrigin: 'center',
-          pointerEvents: 'auto',
-          writingMode: 'vertical-lr',
-          padding: isPhone ? '10px 7px' : '12px 8px',
-          fontSize: '0.46rem',
-          letterSpacing: '3px',
-          minWidth: `${tabWidth - 6}px`,
-          borderTopLeftRadius: 0,
-          borderBottomLeftRadius: 0,
-          borderTopRightRadius: '10px',
-          borderBottomRightRadius: '10px',
-          boxShadow: '0 12px 26px rgba(0,0,0,0.2)',
-        }}
-      >
-        {open ? tt(dictionary, 'common.hide', 'HIDE') : tt(dictionary, 'common.open', 'OPEN')}
-      </button>
-
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          width: railWidth,
-          transform: open ? 'translateX(0)' : `translateX(${railWidth + 24}px)`,
-          transition: 'transform 0.34s cubic-bezier(0.16, 1, 0.3, 1)',
-          pointerEvents: open ? 'auto' : 'none',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: isPhone ? '8px' : '10px',
-          padding: isPhone ? '10px' : '12px',
-          border: `1px solid ${palette.border}`,
-          background: palette.panel,
-          boxShadow: '0 18px 54px rgba(0,0,0,0.22)',
-          overflowY: 'auto',
-        }}
-        className="hide-scrollbar"
-      >
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'start', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          <div>
-            <div style={{ ...glowText, fontSize: isPhone ? '0.54rem' : '0.62rem', letterSpacing: '3px', fontWeight: 800 }}>{modeLabelText}</div>
-            <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px', lineHeight: 1.4, marginTop: '4px' }}>{modeReasonText}</div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, auto)', gap: '10px', textAlign: 'right' }}>
-            <div>
-              <div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>{tt(dictionary, 'common.sync', 'SYNC')}</div>
-              <div style={{ color: syncColor, fontSize: '0.62rem', fontWeight: 800 }}>{quadrantSync.toFixed(0)}%</div>
-            </div>
-            <div>
-              <div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>{tt(dictionary, 'common.trust', 'TRUST')}</div>
-              <div style={{ ...glowText, fontSize: '0.62rem', fontWeight: 800 }}>{chainTrustText}</div>
-            </div>
-            <div>
-              <div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>{tt(dictionary, 'common.load', 'LOAD')}</div>
-              <div style={{ ...glowText, fontSize: '0.62rem', fontWeight: 800 }}>{Math.round(signals.activity * 100)}%</div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <canvas ref={canvasRef} width={canvasWidth} height={canvasHeight} style={{ width: '100%', height: `${canvasHeight}px`, border: `1px solid ${palette.border}`, background: 'rgba(255,255,255,0.015)' }} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <div style={{ ...faintText, fontSize: '0.42rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.wave.system_uptime', 'SYSTEM_UP_TIME')}</div>
-              <div style={{ ...glowText, fontSize: '0.92rem', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{(elapsedSeconds + 1775500).toFixed(0)}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ ...faintText, fontSize: '0.42rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.wave.latency', 'LATENCY')}</div>
-              <div style={{ ...glowText, fontSize: '0.8rem', fontWeight: 800 }}>{latencyMs}ms</div>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '3px', marginBottom: '8px' }}>{tt(dictionary, 'core.context_entropy_bars', 'CONTEXT_ENTROPY_BARS')}</div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '4px', height: '26px' }}>
-            {entropyBars.map((value, index) => (
-              <div
-                key={`rail-entropy-${index}`}
-                style={{
-                  width: index % 3 === 0 ? '6px' : '5px',
-                  height: `${Math.max(6, value * 26)}px`,
-                  background: index % 4 === 0 ? palette.accent : palette.emphasis,
-                  opacity: 0.2 + value * 0.56,
-                  borderRadius: '999px',
-                  boxShadow: `0 0 12px ${index % 4 === 0 ? palette.accent : palette.emphasis}22`,
-                }}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginTop: '10px' }}>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>H</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.H.toFixed(4)}</div></div>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>ETA</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.eta.toFixed(3)}</div></div>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>N</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.N}</div></div>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>D_KL</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{drift.toFixed(4)}</div></div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.active_system', 'ACTIVE_SYSTEM')}: {primaryLinkedSystem?.name || tt(dictionary, 'common.idle', 'IDLE')}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.link_mode', 'LINK_MODE')}: {primaryLinkedSystem ? tt(dictionary, `hud.access.${primaryLinkedSystem.accessMode || 'runtime'}`, (primaryLinkedSystem.accessMode || 'runtime').toUpperCase()) : tt(dictionary, 'common.idle', 'IDLE')}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.system_count', 'SYSTEM_COUNT')}: {linkedSystems.length}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.active_vector', 'ACTIVE_VECTOR')}: {activeVectorText}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'common.severity', 'SEVERITY')}: {severityText}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.wave.merkle_log', 'MERKLE_LOG')}: {merkle.slice(0, 10).toUpperCase()}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.audio_bus', 'AUDIO_BUS')}: {audioArmed ? tt(dictionary, 'core.audio.armed', 'ARMED') : tt(dictionary, 'core.audio.standby', 'STANDBY')} {'//'} {tt(dictionary, 'core.motion', 'MOTION')}: {reducedMotion ? tt(dictionary, 'core.motion.reduced', 'REDUCED') : tt(dictionary, 'core.motion.full', 'FULL')}</div>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.quality_profile', 'QUALITY_PROFILE')}: {qualityTier.toUpperCase()}</div>
-          {latestChainEvent && <div style={{ color: palette.accent, fontSize: '0.44rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.recent_chain_event', 'RECENT_CHAIN_EVENT')}: {latestChainEvent.type}</div>}
-        </div>
-
-        <div style={{ paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '7px' }}>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '3px' }}>{tt(dictionary, 'replay.title', 'MERKLE_REPLAY')}</div>
-          {topReplay.length > 0 ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5px', height: '26px' }}>
-                {topReplay.map((entry, index) => (
-                  <div
-                    key={entry.id}
-                    style={{
-                      flex: 1,
-                      height: `${Math.max(8, (1 - Math.min(1, entry.drift)) * 26)}px`,
-                      borderRadius: '999px',
-                      background: index === 0 ? palette.warning : entry.chainTrust < 0.7 ? palette.accent : palette.emphasis,
-                      opacity: 0.28 + (topReplay.length - index) * 0.12,
-                    }}
-                  />
-                ))}
-              </div>
-              {topReplay.slice(0, 3).map((entry) => (
-                <div key={`rail-replay-${entry.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '0.42rem', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.74)' }}>
-                  <span style={{ color: palette.emphasis }}>{entry.hash.slice(0, 8).toUpperCase()}</span>
-                  <span>{entry.eventType}</span>
-                  <span style={{ color: palette.secondary }}>{formatReplayAge(entry.timestamp)}</span>
-                </div>
-              ))}
-            </>
-          ) : (
-            <div style={{ ...faintText, fontSize: '0.44rem', fontStyle: 'italic' }}>{tt(dictionary, 'replay.empty', 'NO_REPLAY_EVENTS')}</div>
-          )}
-        </div>
-
-        <div style={{ paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ ...softText, fontSize: '0.44rem', letterSpacing: '3px' }}>{tt(dictionary, 'core.wave.event_chain_stream', 'EVENT_CHAIN_STREAM')}</div>
-          {logs.slice(0, 2).map((log) => (
-            <div key={log.id} style={{ color: palette.secondary, fontSize: '0.46rem', letterSpacing: '1.4px', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {log.msg}
-            </div>
-          ))}
-          {logs.length === 0 && <div style={{ ...faintText, fontSize: '0.44rem', fontStyle: 'italic' }}>{tt(dictionary, 'core.wave.stream_idle', 'STREAM_IDLE')}</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Register materials for JSX use
-extend({ CoreShaderMaterial, BeamShaderMaterial });
-
-// Add types for JSX
-declare module '@react-three/fiber' {
-  interface ThreeElements {
-    coreShaderMaterial: ThreeElement<typeof CoreShaderMaterial>;
-    beamShaderMaterial: ThreeElement<typeof BeamShaderMaterial>;
-  }
-}
-
-// DATA SENTINEL (Autonomous Drone)
-function SentinelDrone({
-  index = 0,
-  drift = 0,
-  anchor = [0, 0, 0],
-  color = '#cbd5e1',
-  familyAssetOverrides,
-  assetStage,
-  editMode = false,
-  isSelected = false,
-  onSelectForEdit,
-  onOpenAssetPicker,
-  onDraftAssetOffset,
-  onCommitAssetOffset,
-  onDraftAssetRotation,
-  onCommitAssetRotation,
-  onDraftAssetScale,
-  onCommitAssetScale,
-}: {
-  index?: number;
-  drift?: number;
-  anchor?: [number, number, number];
-  color?: string;
-  familyAssetOverrides?: NodeAssetFamilyOverrides;
-  assetStage?: NodeAssetStage;
-  editMode?: boolean;
-  isSelected?: boolean;
-  onSelectForEdit?: (index: number) => void;
-  onOpenAssetPicker?: () => void;
-  onDraftAssetOffset?: (offset: [number, number, number]) => void;
-  onCommitAssetOffset?: () => void;
-  onDraftAssetRotation?: (rotation: [number, number, number]) => void;
-  onCommitAssetRotation?: () => void;
-  onDraftAssetScale?: (scale: number) => void;
-  onCommitAssetScale?: () => void;
-}) {
-  const groupRef = useRef<THREE.Group>(null!);
-  const visualRef = useRef<THREE.Group>(null!);
-  const previousPositionRef = useRef(new THREE.Vector3(anchor[0], 0, anchor[2]));
-  const previousHeadingRef = useRef(0);
-  const rotatingRef = useRef(false);
-  const scalingRef = useRef(false);
-  const isAlert = drift > 0.1;
-  const sentinelNode = useMemo<GraphNode>(() => ({
-    id: `sentinel-${index}`,
-    label: `SENTINEL-${index + 1}`,
-    position: [0, 0, 0],
-    type: 'module',
-    shape: 'tetrahedron',
-    size: 0.32,
-    parentId: null,
-    tooltip: 'Autonomous sentinel patrol.',
-    color,
-    cluster: 'system',
-    orbitLevel: 0,
-    importance: 'secondary',
-    systemId: null,
-    motionProfile: 'sentinel-linked',
-  }), [color, index]);
-  const sentinelAssetProfile = useMemo<NodeAssetProfile>(() => {
-    const baseProfile = getSentinelAssetProfile(familyAssetOverrides);
-    return {
-      ...baseProfile,
-      preserveFallback: false,
-      appearance: {
-        ...baseProfile.appearance,
-        ...(assetStage || {}),
-        enabled: true,
-        offset: [0, 0, 0],
-        scale: (assetStage?.scale ?? baseProfile.appearance.scale ?? 1) * (isAlert ? 1.08 : 0.88),
-      }
-    };
-  }, [assetStage, familyAssetOverrides, isAlert]);
-  const assetResetKey = `${sentinelNode.id}:${sentinelAssetProfile.appearance.src}`;
-  const assetRotation = assetStage?.rotation || sentinelAssetProfile.appearance.rotation || [0, 0, 0];
-  const editRingRadius = 0.9;
-  const editHandlePosition: [number, number, number] = [
-    Math.sin(assetRotation[1] || 0) * editRingRadius,
-    0.08,
-    Math.cos(assetRotation[1] || 0) * editRingRadius,
-  ];
-  const scaleHandlePosition: [number, number, number] = [
-    Math.sin((assetRotation[1] || 0) + Math.PI / 2) * (editRingRadius + 0.28),
-    0.08,
-    Math.cos((assetRotation[1] || 0) + Math.PI / 2) * (editRingRadius + 0.28),
-  ];
-  const proceduralFallback = (
-    <mesh>
-      <tetrahedronGeometry args={[0.3, 0]} />
-      <meshStandardMaterial
-        color={isAlert ? '#ef4444' : color}
-        emissive={isAlert ? '#ef4444' : color}
-        emissiveIntensity={isAlert ? 0.28 : 0.1}
-        metalness={0.94}
-        roughness={0.18}
-        transparent
-        opacity={isAlert ? 0.88 : 0.72}
-      />
-    </mesh>
-  );
-  const startRotate = useCallback((event: ThreePointerEvent) => {
-    if (!editMode) return;
-    rotatingRef.current = true;
-    event.stopPropagation();
-    capturePointer(event);
-    onSelectForEdit?.(index);
-  }, [editMode, index, onSelectForEdit]);
-  const moveRotate = useCallback((event: ThreePointerEvent) => {
-    if (!rotatingRef.current || !editMode) return;
-    event.stopPropagation();
-    const dx = event.point.x - groupRef.current.position.x;
-    const dz = event.point.z - groupRef.current.position.z;
-    const nextHeading = Math.atan2(dx, dz);
-    onDraftAssetRotation?.([assetRotation[0] || 0, nextHeading, assetRotation[2] || 0]);
-  }, [assetRotation, editMode, onDraftAssetRotation]);
-  const endRotate = useCallback((event: ThreePointerEvent) => {
-    if (!rotatingRef.current) return;
-    rotatingRef.current = false;
-    event.stopPropagation();
-    releasePointer(event);
-    onCommitAssetRotation?.();
-  }, [onCommitAssetRotation]);
-  const startScale = useCallback((event: ThreePointerEvent) => {
-    if (!editMode) return;
-    scalingRef.current = true;
-    event.stopPropagation();
-    capturePointer(event);
-    onSelectForEdit?.(index);
-  }, [editMode, index, onSelectForEdit]);
-  const moveScale = useCallback((event: ThreePointerEvent) => {
-    if (!scalingRef.current || !editMode) return;
-    event.stopPropagation();
-    const dx = event.point.x - groupRef.current.position.x;
-    const dz = event.point.z - groupRef.current.position.z;
-    const distance = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
-    onDraftAssetScale?.(THREE.MathUtils.clamp(distance / editRingRadius, 0.18, 6));
-  }, [editMode, onDraftAssetScale]);
-  const endScale = useCallback((event: ThreePointerEvent) => {
-    if (!scalingRef.current) return;
-    scalingRef.current = false;
-    event.stopPropagation();
-    releasePointer(event);
-    onCommitAssetScale?.();
-  }, [onCommitAssetScale]);
-  useFrame((state) => {
-    if (!groupRef.current) return;
-    const t = state.clock.elapsedTime * (isAlert ? 0.54 : 0.34) + index * 0.8;
-    const orbitRadius = 5.8 + (index % 3) * 1.6 + Math.min(1.8, drift * 12);
-    const radialWave = Math.sin(t * 1.8 + index) * 0.42;
-    const nextPosition = new THREE.Vector3(
-      anchor[0] + Math.cos(t) * (orbitRadius + radialWave),
-      0.14 + Math.sin(t * 2.2 + index * 0.3) * 0.08,
-      anchor[2] + Math.sin(t * 0.96) * (orbitRadius * 0.78),
-    );
-    const travelVector = nextPosition.clone().sub(previousPositionRef.current);
-    const heading = travelVector.lengthSq() > 0.000001
-      ? Math.atan2(travelVector.x, travelVector.z)
-      : previousHeadingRef.current;
-    const normalizedTurn = Math.atan2(
-      Math.sin(heading - previousHeadingRef.current),
-      Math.cos(heading - previousHeadingRef.current),
-    );
-    const speed = travelVector.length();
-    const bank = THREE.MathUtils.clamp(-normalizedTurn * 2.8, -0.32, 0.32);
-    const pitch = THREE.MathUtils.clamp(speed * 3.2, 0, 0.18);
-
-    groupRef.current.position.copy(nextPosition);
-    previousPositionRef.current.copy(nextPosition);
-    previousHeadingRef.current = heading;
-
-    if (visualRef.current) {
-      visualRef.current.rotation.set(
-        pitch,
-        heading,
-        bank + (isAlert ? Math.sin(t * 2.1) * 0.04 : Math.sin(t * 1.6) * 0.018),
-      );
-    }
-  });
-
-  return (
-    <group ref={groupRef}>
-      <mesh
-        visible={false}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelectForEdit?.(index);
-        }}
-      >
-        <sphereGeometry args={[0.82, 18, 18]} />
-      </mesh>
-      <group ref={visualRef}>
-        <NodeAssetErrorBoundary resetKey={assetResetKey} fallback={proceduralFallback}>
-          <NodeAssetRig
-            node={sentinelNode}
-            accent={isAlert ? '#ef4444' : color}
-            scale={0.575}
-            pulsing
-            selected={isAlert}
-            profile={sentinelAssetProfile}
-          />
-        </NodeAssetErrorBoundary>
-      </group>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.34, 0.39, 24]} />
-        <meshBasicMaterial
-          color={isAlert ? '#fb7185' : color}
-          transparent
-          opacity={isAlert ? 0.24 : 0.14}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      {editMode && (
-        <Html center position={[0, 0.42, -1.05]} style={{ pointerEvents: 'auto' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px', borderRadius: '999px', background: 'rgba(2,6,23,0.9)', border: '1px solid rgba(255,255,255,0.14)', boxShadow: '0 10px 28px rgba(0,0,0,0.28)' }}>
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelectForEdit?.(index);
-              }}
-              className="btn-nexus"
-              style={{ padding: '5px 8px', fontSize: '0.42rem', letterSpacing: '1.4px' }}
-            >
-              EDIT
-            </button>
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelectForEdit?.(index);
-                onOpenAssetPicker?.();
-              }}
-              className="btn-nexus"
-              style={{ padding: '5px 8px', fontSize: '0.42rem', letterSpacing: '1.4px' }}
-            >
-              GLB
-            </button>
-          </div>
-        </Html>
-      )}
-      {editMode && isSelected && (
-        <group>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-            <ringGeometry args={[editRingRadius - 0.03, editRingRadius + 0.03, 48]} />
-            <meshBasicMaterial color={color} transparent opacity={0.44} />
-          </mesh>
-          <mesh position={editHandlePosition} onPointerDown={startRotate} onPointerMove={moveRotate} onPointerUp={endRotate} onPointerLeave={endRotate}>
-            <sphereGeometry args={[0.12, 18, 18]} />
-            <meshBasicMaterial color="#f8fafc" transparent opacity={0.92} />
-          </mesh>
-          <mesh position={scaleHandlePosition} onPointerDown={startScale} onPointerMove={moveScale} onPointerUp={endScale} onPointerLeave={endScale}>
-            <boxGeometry args={[0.18, 0.18, 0.18]} />
-            <meshBasicMaterial color="#fbbf24" transparent opacity={0.9} />
-          </mesh>
-          <mesh position={[0, 0.07, 0]}>
-            <sphereGeometry args={[0.06, 14, 14]} />
-            <meshBasicMaterial color={color} transparent opacity={0.82} />
-          </mesh>
-        </group>
-      )}
-    </group>
-  );
-}
-
-function LinkParticleStream({
-  start,
-  end,
-  color = '#ffffff',
-  count = 10,
-  chromatic = true,
-  emphasis = 0.8,
-}: {
-  start: [number, number, number];
-  end: [number, number, number];
-  color?: string;
-  count?: number;
-  chromatic?: boolean;
-  emphasis?: number;
-}) {
-  const baseRef = useRef<THREE.Points>(null!);
-  const cyanRef = useRef<THREE.Points>(null!);
-  const redRef = useRef<THREE.Points>(null!);
-
-  const [basePositions, cyanPositions, redPositions] = useMemo(
-    () => [new Float32Array(count * 3), new Float32Array(count * 3), new Float32Array(count * 3)],
-    [count],
-  );
-
-  const vectors = useMemo(() => {
-    const startVec = new THREE.Vector3(...start);
-    const endVec = new THREE.Vector3(...end);
-    const direction = endVec.clone().sub(startVec);
-    const tangent = direction.clone().normalize();
-    const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
-    if (normal.lengthSq() < 0.0001) {
-      normal.set(0, 1, 0).cross(tangent);
-    }
-    normal.normalize();
-    const binormal = new THREE.Vector3().crossVectors(tangent, normal).normalize();
-    return {
-      start: startVec.toArray() as [number, number, number],
-      direction: direction.toArray() as [number, number, number],
-      normal: normal.toArray() as [number, number, number],
-      binormal: binormal.toArray() as [number, number, number],
-    };
-  }, [end, start]);
-
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime();
-    const flowSpeed = 0.38 + emphasis * 0.34;
-    const split = 0.08 + emphasis * 0.06;
-    const sway = 0.04 + emphasis * 0.03;
-    const [sx, sy, sz] = vectors.start;
-    const [dx, dy, dz] = vectors.direction;
-    const [nx, ny, nz] = vectors.normal;
-    const [bx, by, bz] = vectors.binormal;
-
-    const updateStream = (ref: React.MutableRefObject<THREE.Points>, phase: number, lateralBias: number, wobbleSign: number) => {
-      if (!ref.current) return;
-      const positions = ref.current.geometry.attributes.position.array as Float32Array;
-      for (let i = 0; i < count; i++) {
-        const index = i * 3;
-        const progress = (t * flowSpeed + phase + i / Math.max(count, 1)) % 1;
-        const envelope = Math.sin(progress * Math.PI);
-        const lateral = lateralBias + Math.sin(t * 4.8 + i * 0.72) * split * 0.18 * envelope;
-        const wobble = Math.cos(t * 3.4 + i * 0.54) * sway * wobbleSign * envelope;
-
-        positions[index] = sx + dx * progress + nx * lateral + bx * wobble;
-        positions[index + 1] = sy + dy * progress + ny * lateral + by * wobble;
-        positions[index + 2] = sz + dz * progress + nz * lateral + bz * wobble;
-      }
-      ref.current.geometry.attributes.position.needsUpdate = true;
-    };
-
-    updateStream(baseRef, 0, 0, 1);
-    if (chromatic) {
-      updateStream(cyanRef, 0.16, split, 1);
-      updateStream(redRef, 0.3, -split, -1);
-    }
-  });
-
-  return (
-    <group>
-      <Points ref={baseRef} positions={basePositions} stride={3} frustumCulled={false}>
-        <PointMaterial
-          transparent
-          color={color}
-          size={0.085 + emphasis * 0.035}
-          sizeAttenuation
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          opacity={0.72}
-        />
-      </Points>
-      {chromatic && (
-        <>
-          <Points ref={cyanRef} positions={cyanPositions} stride={3} frustumCulled={false}>
-            <PointMaterial
-              transparent
-              color="#67e8f9"
-              size={0.07 + emphasis * 0.028}
-              sizeAttenuation
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              opacity={0.44}
-            />
-          </Points>
-          <Points ref={redRef} positions={redPositions} stride={3} frustumCulled={false}>
-            <PointMaterial
-              transparent
-              color="#fb7185"
-              size={0.07 + emphasis * 0.028}
-              sizeAttenuation
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-              opacity={0.34}
-            />
-          </Points>
-        </>
-      )}
-    </group>
-  );
-}
-
-// CONNECTION BEAM
-function ConnectionBeam({
-  start,
-  end,
-  color = '#ffffff',
-  streamParticles = 0,
-  chromaticParticles = false,
-  emphasis = 0.8,
-}: {
-  start: [number, number, number];
-  end: [number, number, number];
-  color?: string;
-  streamParticles?: number;
-  chromaticParticles?: boolean;
-  emphasis?: number;
-}) {
-  const count = 20;
-  const matRef = useRef<BeamMaterialRef>(null!);
-  
-  useFrame((state) => {
-    if (matRef.current) {
-      matRef.current.u_time = state.clock.elapsedTime;
-      matRef.current.u_color.set(color);
-    }
-  });
-
-  const { points, progress } = useMemo(() => {
-    const p = new Float32Array(count * 3);
-    const pr = new Float32Array(count);
-    for (let i = 0; i < count; i++) {
-      const t = i / (count - 1);
-      p[i * 3] = start[0] + (end[0] - start[0]) * t;
-      p[i * 3 + 1] = start[1] + (end[1] - start[1]) * t;
-      p[i * 3 + 2] = start[2] + (end[2] - start[2]) * t;
-      pr[i] = t;
-    }
-    return { points: p, progress: pr };
-  }, [start, end, count]);
-
-  return (
-    <group>
-      <Points positions={points} stride={3}>
-        <bufferAttribute attach="geometry-attributes-aProgress" args={[progress, 1]} />
-        <beamShaderMaterial ref={matRef} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
-      </Points>
-      {streamParticles > 0 && (
-        <LinkParticleStream
-          start={start}
-          end={end}
-          color={color}
-          count={streamParticles}
-          chromatic={chromaticParticles}
-          emphasis={emphasis}
-        />
-      )}
-    </group>
-  );
-}
-
-function NodeGlyphSprite({
-  kind,
-  accent,
-  scale,
-  opacity = 1,
-}: {
-  kind: DocumentGlyphKind;
-  accent: string;
-  scale: number;
-  opacity?: number;
-}) {
-  const texture = useMemo(() => createNodeGlyphTexture(kind, accent), [accent, kind]);
-  const aspect = kind === 'folder' ? 0.86 : 1;
-  return (
-    <sprite scale={[scale * aspect, scale, 1]}>
-      <spriteMaterial
-        map={texture}
-        transparent
-        depthWrite={false}
-        opacity={opacity}
-        color="#ffffff"
-      />
-    </sprite>
-  );
-}
-
-function getNodeBadge(node: GraphNode) {
-  const lowerLabel = node.label.toLowerCase();
-  if (node.id === 'imperium') return 'IMPERIUM_NODE';
-  if (node.cluster === 'linked-root') return 'LINKED_SYSTEM';
-  if (node.cluster === 'dashboard' && node.orbitLevel === 2) return 'DASHBOARD_CORE';
-  if (node.cluster === 'agents' && node.orbitLevel === 2) return 'AGENT_CORE';
-  if (node.cluster === 'documents' && node.orbitLevel === 2) return 'DOCUMENT_CORE';
-  if (node.cluster === 'tools' && node.orbitLevel === 2) return 'TOOL_CORE';
-  if (node.cluster === 'system' && node.orbitLevel === 2) return 'SYSTEM_CORE';
-  if (node.type === 'core') return 'SOVEREIGN_CORE';
-  if (node.type === 'engine') return 'ACTIVE_ENGINE';
-  if (node.type === 'edition') return 'EDITION_NODE';
-  if (node.type === 'module') return 'LINKED_MODULE';
-  if (node.type === 'folder') return 'DIRECTORY_OBJECT';
-  if (node.type === 'link-placeholder') return 'ACCESS_PORT';
-  if (lowerLabel.endsWith('.py')) return 'PY_EXEC';
-  if (lowerLabel.endsWith('.json')) return 'JSON_STATE';
-  if (lowerLabel.endsWith('.md')) return 'MARKDOWN';
-  return 'FILE_OBJECT';
-}
-
-function getNodeAccent(node: GraphNode, signals: DashboardSignals, materialColor: string) {
-  if (node.type === 'core') return signals.palette.emphasis;
-  if (node.type === 'engine') return signals.palette.secondary;
-  if (node.type === 'edition') return node.color || signals.palette.warning;
-  if (node.type === 'module') return node.color || signals.palette.emphasis;
-  if (node.type === 'folder') return node.color || signals.palette.accent;
-  if (node.type === 'link-placeholder') return node.color || signals.palette.warning;
-  return materialColor;
-}
-
-type NodeActivityState = 'neutral' | 'active' | 'muted';
-
-function resolveLinkedSystemId(nodeId: string, linkedSystems: LinkedSystem[]) {
-  for (const system of linkedSystems) {
-    const rootId = `project-${system.id}`;
-    if (nodeId === rootId || nodeId.startsWith(`${rootId}-`)) {
-      return system.id;
-    }
-  }
-  return null;
-}
-
-function inferMotionProfile(node: GraphNode) {
-  if (node.motionProfile) return node.motionProfile;
-  if (node.type === 'core') return 'sentinel-linked';
-  if (node.type === 'engine' || node.type === 'edition' || node.type === 'module' || node.type === 'link-placeholder') {
-    return 'living';
-  }
-  return node.type === 'folder' ? 'living' : 'static';
-}
-
-function getNodeSystem(node: GraphNode, linkedSystems: LinkedSystem[]) {
-  const systemId = node.systemId || resolveLinkedSystemId(node.id, linkedSystems);
-  return systemId ? linkedSystems.find((system) => system.id === systemId) || null : null;
-}
-
-function getNodeCapabilities(node: GraphNode | null, linkedSystems: LinkedSystem[], hasAssetOverride: boolean): NodeCapabilities {
-  if (!node) {
-    return {
-      kind: 'passive',
-      accessMode: 'none',
-      system: null,
-      canExecute: false,
-      canOpenDocument: false,
-      canAssignAsset: false,
-      canClearAsset: false,
-      canFocus: false,
-      blockReason: null,
-    };
-  }
-
-  const system = getNodeSystem(node, linkedSystems);
-  const accessMode: NodeAccessMode = system?.accessMode || 'none';
-
-  if (node.type === 'link-placeholder') {
-    return {
-      kind: 'access',
-      accessMode,
-      system,
-      canExecute: false,
-      canOpenDocument: false,
-      canAssignAsset: true,
-      canClearAsset: hasAssetOverride,
-      canFocus: true,
-      blockReason: null,
-    };
-  }
-
-  if (node.action) {
-    return {
-      kind: 'engine',
-      accessMode,
-      system,
-      canExecute: true,
-      canOpenDocument: false,
-      canAssignAsset: true,
-      canClearAsset: hasAssetOverride,
-      canFocus: true,
-      blockReason: null,
-    };
-  }
-
-  if (node.filePath) {
-    const blocked = system?.accessMode === 'structural';
-    return {
-      kind: 'document',
-      accessMode,
-      system,
-      canExecute: false,
-      canOpenDocument: !blocked,
-      canAssignAsset: true,
-      canClearAsset: hasAssetOverride,
-      canFocus: true,
-      blockReason: blocked ? 'STRUCTURAL_ONLY_LINK' : null,
-    };
-  }
-
-  if (node.type === 'folder') {
-    return {
-      kind: 'folder',
-      accessMode,
-      system,
-      canExecute: false,
-      canOpenDocument: false,
-      canAssignAsset: true,
-      canClearAsset: hasAssetOverride,
-      canFocus: true,
-      blockReason: null,
-    };
-  }
-
-  return {
-    kind: 'system',
-    accessMode,
-    system,
-    canExecute: false,
-    canOpenDocument: false,
-    canAssignAsset: true,
-    canClearAsset: hasAssetOverride,
-    canFocus: true,
-    blockReason: null,
-  };
-}
-
-function formatAssetLabel(stage?: { label?: string; src?: string } | null) {
-  if (!stage?.src) return 'UNASSIGNED';
-  return stage.label || stage.src.split('/').pop() || 'ASSET';
-}
-
-function NodeAnchor({
-  position,
-  children,
-}: {
-  position: [number, number, number];
-  children: React.ReactNode;
-}) {
-  return <group position={position}>{children}</group>;
-}
-
-function NodeLabel({
-  badge,
-  label,
-  color,
-  compact = false,
-  opacity = 0.94,
-}: {
-  badge: string;
-  label: string;
-  color: string;
-  compact?: boolean;
-  opacity?: number;
-}) {
-  return (
-    <group position={[0, 0.06, 0]}>
-      <Text
-        position={[0, 0, compact ? -0.34 : -0.42]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        color="#cbd5e1"
-        fontSize={compact ? 0.12 : 0.13}
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={compact ? 4.4 : 5.6}
-        outlineWidth={0.012}
-        outlineColor="#020617"
-        fillOpacity={Math.max(0.34, opacity * 0.74)}
-      >
-        {badge}
-      </Text>
-      <Text
-        position={[0, 0, compact ? -0.08 : -0.18]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        color={color}
-        fontSize={compact ? 0.17 : 0.2}
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={compact ? 4.6 : 5.8}
-        outlineWidth={0.016}
-        outlineColor="#020617"
-        fillOpacity={opacity}
-      >
-        {label}
-      </Text>
-    </group>
-  );
-}
-
-function AggregateClusterBadge({
-  badge,
-  dictionary,
-}: {
-  badge: AggregateBadge;
-  dictionary: Record<string, string>;
-}) {
-  const translatedLabel = tt(dictionary, `graph.cluster.${badge.cluster}`, GRAPH_CLUSTER_CONFIG[badge.cluster].label);
-  const badgeColor = badge.active ? badge.color : new THREE.Color(badge.color).lerp(new THREE.Color('#94a3b8'), 0.38).getStyle();
-
-  return (
-    <group position={badge.position}>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.46, 0.56, 48]} />
-        <meshBasicMaterial
-          color={badgeColor}
-          transparent
-          opacity={badge.active ? 0.34 : 0.2}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <Sphere args={[0.18, 16, 16]}>
-        <meshBasicMaterial color={badgeColor} transparent opacity={badge.active ? 0.3 : 0.18} />
-      </Sphere>
-      <Text
-        position={[0, 0.05, -0.26]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        color="#e2e8f0"
-        fontSize={0.13}
-        anchorX="center"
-        anchorY="middle"
-        maxWidth={4.8}
-        outlineWidth={0.012}
-        outlineColor="#020617"
-        fillOpacity={badge.active ? 0.92 : 0.72}
-      >
-        {translatedLabel}
-      </Text>
-      <Text
-        position={[0, 0.05, 0.02]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        color={badgeColor}
-        fontSize={0.19}
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.016}
-        outlineColor="#020617"
-        fillOpacity={badge.active ? 1 : 0.78}
-      >
-        {`${badge.count}`}
-      </Text>
-    </group>
-  );
-}
-
-class SceneErrorBoundary extends React.Component<
-  { children: React.ReactNode; dictionary: Record<string, string> },
-  { hasError: boolean }
-> {
-  constructor(props: { children: React.ReactNode; dictionary: Record<string, string> }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: unknown) {
-    console.error('[NEXUS_CORE] Scene runtime failure:', error);
-    if (typeof window !== 'undefined') {
-      const message = error instanceof Error ? error.message : String(error);
-      window.dispatchEvent(new CustomEvent('NEXUS_SCENE_ERROR', { detail: message }));
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(0,0,0,0.82)',
-            color: '#fff',
-            zIndex: 40,
-            pointerEvents: 'none',
-            textAlign: 'center',
-            padding: '24px',
-            letterSpacing: '2px',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          <div>
-            <div style={{ fontSize: '0.72rem', opacity: 0.72, marginBottom: '10px' }}>
-              {tt(this.props.dictionary, 'core.scene.guard', 'SCENE_GUARD_ACTIVE')}
-            </div>
-            <div style={{ fontSize: '0.92rem', fontWeight: 700 }}>
-              {tt(this.props.dictionary, 'core.scene.guard.detail', 'RUNTIME_VISUAL_LAYER_FAILED_BUT_CONTROL_SURFACE_REMAINS_AVAILABLE')}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
-class NodeAssetErrorBoundary extends React.Component<
-  { children: React.ReactNode; fallback: React.ReactNode; resetKey: string },
-  { hasError: boolean }
-> {
-  constructor(props: { children: React.ReactNode; fallback: React.ReactNode; resetKey: string }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: unknown) {
-    console.warn('[NEXUS_CORE] Node asset fallback engaged:', error);
-  }
-
-  componentDidUpdate(prevProps: Readonly<{ resetKey: string }>) {
-    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
-      this.setState({ hasError: false });
-    }
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return this.props.fallback;
-    }
-
-    return this.props.children;
-  }
-}
-
-// SYSTEM NODE
-function SystemNode({
-  node, isPulsing, isSelected = false, eta = 1.0, drift = 0.0, signals, zoomTier, reducedMotion = false, familyAssetOverrides, activityState = 'neutral', editMode, onHover, onUnhover, onClick, onOpenAssetPicker, onSelectForEdit, onDraftAssetOffset, onCommitAssetOffset, onDraftAssetRotation, onCommitAssetRotation, onDraftAssetScale, onCommitAssetScale, imperiumOrbit,
-}: {
-  node: GraphNode;
-  isPulsing?: boolean;
-  isSelected?: boolean;
-  eta?: number;
-  drift?: number;
-  signals: DashboardSignals;
-  zoomTier: ZoomTier;
-  reducedMotion?: boolean;
-  familyAssetOverrides?: NodeAssetFamilyOverrides;
-  activityState?: NodeActivityState;
-  editMode?: boolean;
-  onHover: (n: GraphNode) => void;
-  onUnhover: () => void;
-  onClick: (n: GraphNode) => void;
-  onOpenAssetPicker?: (node: GraphNode, slot: AssetStageSlot) => void;
-  onSelectForEdit?: (node: GraphNode) => void;
-  onDraftAssetOffset?: (nodeId: string, offset: [number, number, number]) => void;
-  onCommitAssetOffset?: (nodeId: string) => void;
-  onDraftAssetRotation?: (nodeId: string, rotation: [number, number, number]) => void;
-  onCommitAssetRotation?: (nodeId: string) => void;
-  onDraftAssetScale?: (nodeId: string, scale: number) => void;
-  onCommitAssetScale?: (nodeId: string) => void;
-  imperiumOrbit?: { center: [number, number, number]; radius: number };
-}) {
-  const [hovered, setHovered] = useState(false);
-  const groupRef = useRef<THREE.Group>(null!);
-  const anchorRef = useRef<THREE.Group>(null!);
-  const draggingRef = useRef(false);
-  const rotatingRef = useRef(false);
-  const scalingRef = useRef(false);
-  const isImperium = node.id === 'imperium';
-  const isLinkPlaceholder = node.type === 'link-placeholder';
-  const isSphereNode = node.shape === 'sphere';
-  const baseColor = node.color || '#888';
-  const activeColor = isLinkPlaceholder
-    ? (hovered ? '#94a3b8' : baseColor)
-    : hovered
-    ? '#93c5fd'
-    : isSelected
-    ? signals.palette.warning
-    : baseColor;
-  const materialColor = activeColor;
-  const familyAccent = getNodeAccent(node, signals, materialColor);
-  const badge = getNodeBadge(node);
-  const isMuted = activityState === 'muted';
-  const severityBoost = signals.mode === 'INCIDENT' ? 1 + signals.severity * 0.08 : 1;
-  const importanceBoost = node.importance === 'primary' ? 1.08 : node.importance === 'secondary' ? 1 : 0.94;
-  const activityBoost = activityState === 'active' ? 1.05 : isMuted ? 0.94 : 1;
-  const interactionScale = isLinkPlaceholder ? (hovered ? 1.03 : 1) : hovered ? 1.11 : isSelected ? 1.06 : activityState === 'active' ? 1.02 : 1;
-  const scale = (node.size * interactionScale * activityBoost) * (isPulsing ? 1.08 : 1) * severityBoost * importanceBoost;
-  const labelOpacity = isLinkPlaceholder ? (hovered ? 0.9 : 0.8) : isMuted ? 0.46 : activityState === 'active' ? 1 : 0.94;
-  const haloOpacityFactor = isLinkPlaceholder ? 0.18 : isMuted ? 0.35 : activityState === 'active' ? 1.04 : 0.92;
-  const showLabel = shouldRenderNodeLabel(node, zoomTier, hovered, isSelected);
-  const motionProfile = inferMotionProfile(node);
-
-  const resolvedAssetProfile = getNodeAssetProfile(node, familyAssetOverrides);
-  const usesExternalAsset = nodeUsesExternalAsset(node, familyAssetOverrides);
-  const showEditOverlay = Boolean(editMode && usesExternalAsset && node.type !== 'file' && node.type !== 'folder');
-  const assetResetKey = `${node.id}:${resolvedAssetProfile.appearance.src}:${resolvedAssetProfile.effect?.src || ''}`;
-  const pOver = useCallback(() => { setHovered(true); onHover(node); }, [node, onHover]);
-  const pOut = useCallback(() => { setHovered(false); onUnhover(); }, [onUnhover]);
-  const pClick = useCallback(() => onClick(node), [node, onClick]);
-  const assetOffsetY = resolvedAssetProfile.appearance.offset?.[1] ?? 0;
-  const assetRotation = resolvedAssetProfile.appearance.rotation || [0, 0, 0];
-  const editRingRadius = Math.max(scale * 1.08, 0.8);
-  const editHandlePosition: [number, number, number] = [
-    Math.sin(assetRotation[1] || 0) * editRingRadius,
-    0.04,
-    Math.cos(assetRotation[1] || 0) * editRingRadius,
-  ];
-  const scaleHandlePosition: [number, number, number] = [
-    Math.sin((assetRotation[1] || 0) + Math.PI / 2) * (editRingRadius + 0.34),
-    0.04,
-    Math.cos((assetRotation[1] || 0) + Math.PI / 2) * (editRingRadius + 0.34),
-  ];
-  const startDrag = useCallback((event: ThreePointerEvent) => {
-    if (!editMode || !usesExternalAsset) return;
-    draggingRef.current = true;
-    event.stopPropagation();
-    capturePointer(event);
-    onSelectForEdit?.(node);
-  }, [editMode, node, onSelectForEdit, usesExternalAsset]);
-  const moveDrag = useCallback((event: ThreePointerEvent) => {
-    if (!draggingRef.current || !editMode || !usesExternalAsset) return;
-    event.stopPropagation();
-    const nextOffset: [number, number, number] = [
-      event.point.x - node.position[0],
-      assetOffsetY,
-      event.point.z - node.position[2],
-    ];
-    onDraftAssetOffset?.(node.id, nextOffset);
-  }, [assetOffsetY, editMode, node.id, node.position, onDraftAssetOffset, usesExternalAsset]);
-  const endDrag = useCallback((event: ThreePointerEvent) => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    event.stopPropagation();
-    releasePointer(event);
-    onCommitAssetOffset?.(node.id);
-  }, [node.id, onCommitAssetOffset]);
-  const startRotate = useCallback((event: ThreePointerEvent) => {
-    if (!editMode || !usesExternalAsset) return;
-    rotatingRef.current = true;
-    event.stopPropagation();
-    capturePointer(event);
-    onSelectForEdit?.(node);
-  }, [editMode, node, onSelectForEdit, usesExternalAsset]);
-  const moveRotate = useCallback((event: ThreePointerEvent) => {
-    if (!rotatingRef.current || !editMode || !usesExternalAsset) return;
-    event.stopPropagation();
-    const dx = event.point.x - node.position[0];
-    const dz = event.point.z - node.position[2];
-    const nextHeading = Math.atan2(dx, dz);
-    const nextRotation: [number, number, number] = [assetRotation[0] || 0, nextHeading, assetRotation[2] || 0];
-    onDraftAssetRotation?.(node.id, nextRotation);
-  }, [assetRotation, editMode, node.id, node.position, onDraftAssetRotation, usesExternalAsset]);
-  const endRotate = useCallback((event: ThreePointerEvent) => {
-    if (!rotatingRef.current) return;
-    rotatingRef.current = false;
-    event.stopPropagation();
-    releasePointer(event);
-    onCommitAssetRotation?.(node.id);
-  }, [node.id, onCommitAssetRotation]);
-  const startScale = useCallback((event: ThreePointerEvent) => {
-    if (!editMode || !usesExternalAsset) return;
-    scalingRef.current = true;
-    event.stopPropagation();
-    capturePointer(event);
-    onSelectForEdit?.(node);
-  }, [editMode, node, onSelectForEdit, usesExternalAsset]);
-  const moveScale = useCallback((event: ThreePointerEvent) => {
-    if (!scalingRef.current || !editMode || !usesExternalAsset) return;
-    event.stopPropagation();
-    const dx = event.point.x - node.position[0];
-    const dz = event.point.z - node.position[2];
-    const distance = Math.max(0.15, Math.sqrt(dx * dx + dz * dz));
-    const nextScale = THREE.MathUtils.clamp(distance / Math.max(editRingRadius, 0.0001), 0.18, 6);
-    onDraftAssetScale?.(node.id, nextScale);
-  }, [editMode, editRingRadius, node.id, node.position, onDraftAssetScale, usesExternalAsset]);
-  const endScale = useCallback((event: ThreePointerEvent) => {
-    if (!scalingRef.current) return;
-    scalingRef.current = false;
-    event.stopPropagation();
-    releasePointer(event);
-    onCommitAssetScale?.(node.id);
-  }, [node.id, onCommitAssetScale]);
-  const solidOpacity = isLinkPlaceholder
-    ? (hovered ? 0.42 : 0.26)
-    : isSelected
-    ? 0.92
-    : hovered
-    ? 0.88
-    : isMuted
-    ? 0.42
-    : 0.74;
-  const wireOpacity = isLinkPlaceholder
-    ? 0.08
-    : isSelected
-    ? 0.24
-    : hovered
-    ? 0.18
-    : 0.12;
-
-  const assetFallback = (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[Math.max(scale * 0.34, 0.18), Math.max(scale * 0.5, 0.26), 42]} />
-        <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.32, solidOpacity * 0.72)} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-        <circleGeometry args={[Math.max(scale * 0.28, 0.14), 42]} />
-        <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.2, solidOpacity * 0.44)} />
-      </mesh>
-    </group>
-  );
-  const assetSupportVisual = (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
-        <ringGeometry args={[Math.max(scale * 0.42, 0.22), Math.max(scale * 0.62, 0.32), 48]} />
-        <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.18, solidOpacity * 0.42)} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
-        <circleGeometry args={[Math.max(scale * 0.18, 0.1), 32]} />
-        <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.14, solidOpacity * 0.2)} />
-      </mesh>
-    </group>
-  );
-  const assetHybridBody = node.shape === 'octahedron'
-    ? (
-      <group>
-        <Octahedron args={[scale * 0.72, 0]}>
-          <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.26, solidOpacity * 0.52)} />
-        </Octahedron>
-        <Octahedron args={[scale * 0.76, 0]}>
-          <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.14, wireOpacity * 1.2)} wireframe />
-        </Octahedron>
-      </group>
-    )
-    : node.shape === 'tetrahedron'
-    ? (
-      <group>
-        <mesh>
-          <tetrahedronGeometry args={[scale * 0.72, 0]} />
-          <meshStandardMaterial
-            color={familyAccent}
-            emissive={familyAccent}
-            emissiveIntensity={0.12 + (hovered || isSelected ? 0.08 : 0)}
-            metalness={0.88}
-            roughness={0.22}
-            transparent
-            opacity={Math.max(0.24, solidOpacity * 0.46)}
-          />
-        </mesh>
-        <mesh>
-          <tetrahedronGeometry args={[scale * 0.76, 0]} />
-          <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.1, wireOpacity * 1.2)} wireframe />
-        </mesh>
-      </group>
-    )
-    : node.shape === 'sphere'
-    ? (
-      <group>
-        <Sphere args={[scale * 0.38, 24, 24]}>
-          <meshStandardMaterial
-            color={familyAccent}
-            emissive={familyAccent}
-            emissiveIntensity={0.08 + (hovered || isSelected ? 0.08 : 0)}
-            metalness={0.62}
-            roughness={0.34}
-            transparent
-            opacity={Math.max(0.22, solidOpacity * 0.34)}
-          />
-        </Sphere>
-        <Sphere args={[scale * 0.42, 20, 20]}>
-          <meshBasicMaterial color={familyAccent} transparent opacity={Math.max(0.1, wireOpacity)} wireframe />
-        </Sphere>
-      </group>
-    )
-    : node.shape === 'document'
-    ? (
-      <NodeGlyphSprite
-        kind={
-          node.label.toLowerCase().endsWith('.py')
-            ? 'python'
-            : node.label.toLowerCase().endsWith('.json')
-            ? 'json'
-            : node.label.toLowerCase().endsWith('.md')
-            ? 'markdown'
-            : 'generic'
-        }
-        accent={familyAccent}
-        scale={scale * 1.36}
-        opacity={Math.max(0.34, labelOpacity * 0.8)}
-      />
-    )
-    : node.shape === 'folder-icon'
-    ? <NodeGlyphSprite kind="folder" accent={familyAccent} scale={scale * 1.28} opacity={Math.max(0.34, labelOpacity * 0.8)} />
-    : null;
-
-  const wrapWithAnchor = (children: React.ReactNode) =>
-    isImperium ? <group ref={anchorRef}>{children}</group> : <NodeAnchor position={node.position}>{children}</NodeAnchor>;
-
-  useFrame((state) => {
-    if (!isImperium || !imperiumOrbit || !anchorRef.current) return;
-    const t = state.clock.elapsedTime;
-    const angle = t * 0.08;
-    anchorRef.current.position.set(
-      imperiumOrbit.center[0] + Math.cos(angle) * imperiumOrbit.radius,
-      node.position[1],
-      imperiumOrbit.center[2] + Math.sin(angle) * imperiumOrbit.radius,
-    );
-  });
-
-  useFrame((state, delta) => {
-    if (!groupRef.current) return;
-    const t = state.clock.elapsedTime + node.id.length * 0.09;
-    const motionEnergy = reducedMotion ? 0 : motionProfile === 'sentinel-linked' ? 0.72 : motionProfile === 'living' ? 0.42 : 0.14;
-    const pulse = isPulsing ? 0.032 : hovered || isSelected ? 0.022 : 0.012;
-    const driftWave = Math.min(0.012, drift * 0.06);
-    const zoomDamp = zoomTier === 'overview' ? 0.4 : zoomTier === 'cluster' ? 0.7 : 1;
-    const baseLateralDrift = node.type === 'file'
-      ? 0.008
-      : node.type === 'folder'
-      ? 0.012
-      : node.shape === 'sphere'
-      ? 0.024
-      : node.shape === 'tetrahedron'
-      ? 0.02
-      : 0.016;
-    const baseVerticalDrift = node.shape === 'sphere'
-      ? 0.009
-      : node.type === 'file' || node.type === 'folder'
-      ? 0.004
-      : 0.006;
-    const anchorLerp = 1 - Math.exp(-delta * 7.5);
-    const organicScale = 1 + (Math.sin(t * (node.shape === 'sphere' ? 1.8 : 2.4)) * pulse + driftWave) * motionEnergy * zoomDamp;
-    const targetX = 0;
-    const targetZ = 0;
-    const targetY = node.shape === 'sphere'
-      ? Math.sin(t * 1.16 + node.size) * baseVerticalDrift * motionEnergy
-      : Math.sin(t * 1.5 + node.position[2] * 0.2) * baseVerticalDrift * motionEnergy;
-    groupRef.current.scale.setScalar(organicScale);
-    groupRef.current.position.x = THREE.MathUtils.lerp(groupRef.current.position.x, targetX, anchorLerp);
-    groupRef.current.position.z = THREE.MathUtils.lerp(groupRef.current.position.z, targetZ, anchorLerp);
-    groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, targetY, anchorLerp);
-    groupRef.current.rotation.y = (node.shape === 'octahedron' || node.shape === 'tetrahedron')
-      ? Math.sin(t * 0.9) * 0.1 * motionEnergy
-      : Math.sin(t * 0.42) * 0.04 * motionEnergy;
-    groupRef.current.rotation.x = node.shape === 'tetrahedron'
-      ? 0.05 + Math.cos(t * 1.1) * 0.04 * motionEnergy
-      : 0;
-  });
-
-  if (usesExternalAsset) {
-    return wrapWithAnchor(
-      <group ref={groupRef} onPointerOver={pOver} onPointerOut={pOut} onClick={pClick}>
-          <mesh visible={false} onClick={pClick} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerLeave={endDrag}>
-            <sphereGeometry args={[scale * 0.84, 18, 18]} />
-          </mesh>
-          {resolvedAssetProfile.preserveFallback !== false && assetHybridBody}
-          {resolvedAssetProfile.preserveFallback !== false && assetSupportVisual}
-          <NodeAssetErrorBoundary resetKey={assetResetKey} fallback={assetFallback}>
-            <NodeAssetRig
-              node={node}
-              accent={familyAccent}
-              scale={scale * 1.02}
-              pulsing={Boolean(isPulsing)}
-              selected={isSelected}
-              profile={resolvedAssetProfile}
-            />
-          </NodeAssetErrorBoundary>
-          {showLabel && (
-            <group position={[0, 0, -(scale * 0.7 + 1.0)]}>
-              <NodeLabel badge={badge} label={node.label} color={familyAccent} opacity={labelOpacity} />
-            </group>
-          )}
-          {showEditOverlay && isSelected && (
-            <group>
-              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-                <ringGeometry args={[editRingRadius - 0.03, editRingRadius + 0.03, 48]} />
-                <meshBasicMaterial color={familyAccent} transparent opacity={0.44} />
-              </mesh>
-              <mesh position={editHandlePosition} onPointerDown={startRotate} onPointerMove={moveRotate} onPointerUp={endRotate} onPointerLeave={endRotate}>
-                <sphereGeometry args={[0.12, 18, 18]} />
-                <meshBasicMaterial color="#f8fafc" transparent opacity={0.9} />
-              </mesh>
-              <mesh position={scaleHandlePosition} onPointerDown={startScale} onPointerMove={moveScale} onPointerUp={endScale} onPointerLeave={endScale}>
-                <boxGeometry args={[0.18, 0.18, 0.18]} />
-                <meshBasicMaterial color={signals.palette.warning} transparent opacity={0.9} />
-              </mesh>
-              <mesh position={[0, 0.03, 0]}>
-                <sphereGeometry args={[0.06, 14, 14]} />
-                <meshBasicMaterial color={familyAccent} transparent opacity={0.82} />
-              </mesh>
-            </group>
-          )}
-          {showEditOverlay && (
-            <Html center position={[0, 0.2, -(scale * 0.92 + 0.58)]} style={{ pointerEvents: 'auto' }}>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '4px',
-                borderRadius: '999px',
-                background: 'rgba(2,6,23,0.9)',
-                border: `1px solid ${signals.palette.border}`,
-                boxShadow: '0 10px 28px rgba(0,0,0,0.28)',
-              }}>
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectForEdit?.(node);
-                  }}
-                  className="btn-nexus"
-                  style={{ padding: '5px 8px', fontSize: '0.42rem', letterSpacing: '1.4px' }}
-                >
-                  EDIT
-                </button>
-                <button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectForEdit?.(node);
-                    onOpenAssetPicker?.(node, 'appearance');
-                  }}
-                  className="btn-nexus"
-                  style={{ padding: '5px 8px', fontSize: '0.42rem', letterSpacing: '1.4px' }}
-                >
-                  GLB
-                </button>
-              </div>
-            </Html>
-          )}
-      </group>,
-    );
-  }
-
-  // 3D SHAPES
-  if (node.shape === 'octahedron') {
-    return wrapWithAnchor(
-      <group ref={groupRef} onPointerOver={pOver} onPointerOut={pOut} onClick={pClick}>
-          {/* 3D Invisible Hitbox for Guaranteed Selection */}
-          <mesh visible={false} onClick={pClick}>
-            <sphereGeometry args={[scale * 0.8, 16, 16]} />
-          </mesh>
-          <Octahedron args={[scale * 0.95, 0]}>
-            <meshBasicMaterial color={familyAccent} transparent opacity={solidOpacity} />
-          </Octahedron>
-          <Octahedron args={[scale, 0]}>
-            <meshBasicMaterial color={familyAccent} transparent opacity={wireOpacity} wireframe />
-          </Octahedron>
-          {showLabel && (
-            <group position={[0, 0, -(scale + 1.0)]}>
-              <NodeLabel badge={badge} label={node.label} color={familyAccent} opacity={labelOpacity} />
-            </group>
-          )}
-      </group>,
-    );
-  }
-
-  if (node.shape === 'tetrahedron') {
-    return wrapWithAnchor(
-      <group ref={groupRef} onPointerOver={pOver} onPointerOut={pOut} onClick={pClick}>
-          <mesh visible={false} onClick={pClick}>
-            <sphereGeometry args={[scale * 0.8, 16, 16]} />
-          </mesh>
-          <mesh>
-            <tetrahedronGeometry args={[scale * 0.95, 0]} />
-            <meshStandardMaterial color={familyAccent} emissive={familyAccent} emissiveIntensity={0.08 + (hovered || isSelected ? 0.12 : 0)} metalness={0.92} roughness={0.18} transparent opacity={solidOpacity} />
-          </mesh>
-          <mesh>
-            <tetrahedronGeometry args={[scale, 0]} />
-            <meshBasicMaterial color={familyAccent} transparent opacity={wireOpacity} wireframe />
-          </mesh>
-          {showLabel && (
-            <group position={[0, 0, -(scale + 0.6)]}>
-              <NodeLabel badge={badge} label={node.label} color={familyAccent} opacity={labelOpacity} />
-            </group>
-          )}
-      </group>,
-    );
-  }
-
-  if (node.shape === 'sphere') {
-    return wrapWithAnchor(
-      <group ref={groupRef} onPointerOver={pOver} onPointerOut={pOut} onClick={pClick}>
-          <mesh visible={false} onClick={pClick}>
-            <sphereGeometry args={[scale * 0.6, 16, 16]} />
-          </mesh>
-          {/* Hyper-Fidelity Sphere segments: 32x32 */}
-          <Sphere args={[scale * 0.55, 32, 32]}>
-            <meshStandardMaterial color={familyAccent} emissive={familyAccent} emissiveIntensity={0.06 + (hovered || isSelected ? 0.08 : 0)} metalness={0.68} roughness={0.32} transparent opacity={solidOpacity} />
-          </Sphere>
-          <Sphere args={[scale * 0.48, 24, 24]}>
-            <meshBasicMaterial color={familyAccent} transparent opacity={Math.min(0.38, solidOpacity * 0.46)} />
-          </Sphere>
-          <Sphere args={[scale * 0.6, 32, 32]}>
-            <meshBasicMaterial color={familyAccent} transparent opacity={wireOpacity} wireframe />
-          </Sphere>
-          {showLabel && (
-            <group position={[0, 0, -(scale * 0.6 + 1.2)]}>
-              <NodeLabel badge={badge} label={node.label} color={familyAccent} opacity={labelOpacity} />
-            </group>
-          )}
-      </group>,
-    );
-  }
-
-  // DOCUMENT SHAPE (Restored Forensic Files)
-  if (node.shape === 'document') {
-    const lowerLabel = node.label.toLowerCase();
-    const isPy = lowerLabel.endsWith('.py');
-    const isJson = lowerLabel.endsWith('.json');
-    const isMd = lowerLabel.endsWith('.md');
-    const glyphKind: DocumentGlyphKind = isPy
-      ? 'python'
-      : isJson
-      ? 'json'
-      : isMd
-      ? 'markdown'
-      : 'generic';
-
-    return wrapWithAnchor(
-      <group ref={groupRef} onPointerOver={pOver} onPointerOut={pOut} onClick={pClick}>
-          <mesh visible={false} onClick={pClick}>
-            <sphereGeometry args={[scale * 0.8, 16, 16]} />
-          </mesh>
-          <NodeGlyphSprite kind={glyphKind} accent={familyAccent} scale={scale * 1.95} opacity={labelOpacity} />
-          
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[scale * 0.45, scale * 0.52, 32]} />
-            <meshBasicMaterial color={familyAccent} transparent opacity={wireOpacity} />
-          </mesh>
-          {showLabel && (
-            <group position={[0, 0, -(scale * 1.34)]}>
-              <NodeLabel badge={badge} label={node.label} color={familyAccent} compact opacity={labelOpacity} />
-            </group>
-          )}
-      </group>,
-    );
-  }
-
-  // FOLDER SHAPE
-  if (node.shape === 'folder-icon') {
-    return wrapWithAnchor(
-      <group ref={groupRef} onPointerOver={pOver} onPointerOut={pOut} onClick={pClick}>
-          <mesh visible={false} onClick={pClick}>
-            <sphereGeometry args={[scale * 0.8, 16, 16]} />
-          </mesh>
-          <NodeGlyphSprite kind="folder" accent={familyAccent} scale={scale * 1.74} opacity={labelOpacity} />
-          {showLabel && (
-            <group position={[0, 0, -(scale * 1.08)]}>
-              <NodeLabel badge={badge} label={`/${node.label}`} color={familyAccent} compact opacity={labelOpacity} />
-            </group>
-          )}
-      </group>,
-    );
-  }
-
-  return null;
-}
-
-function DecryptionHandshake({ onComplete, dictionary }: { onComplete: () => void; dictionary: Record<string, string> }) {
-  const [stream, setStream] = useState<string[]>([]);
-  useEffect(() => {
-    const chars = "0123456789ABCDEF";
-    const iv = setInterval(() => {
-      let line = "";
-      for (let i = 0; i < 40; i++) line += chars[Math.floor(Math.random() * 16)];
-      setStream(prev => [line, ...prev].slice(0, 5));
-    }, 40);
-    setTimeout(() => { clearInterval(iv); setStream([]); onComplete(); }, 600);
-    return () => clearInterval(iv);
-  }, [onComplete]);
-
-  if (stream.length === 0) return null;
-  return (
-    <div style={{ color: '#ffffff22', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', paddingBottom: '20px', borderBottom: '1px solid #ffffff11', marginBottom: '20px' }}>
-       <div style={{ color: '#ffffff', marginBottom: '10px', fontSize: '0.6rem', letterSpacing: '2px' }}>
-         [ {tt(dictionary, 'viewer.handshake', 'INTEGRITY_HANDSHAKE_IN_PROGRESS')} ]
-       </div>
-       {stream.map((s, i) => <div key={i}>{s}</div>)}
-    </div>
-  );
-}
-
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function countQueryMatches(content: string, query: string) {
-  if (!query.trim()) return 0;
-  const matches = content.match(new RegExp(escapeRegex(query.trim()), 'gi'));
-  return matches ? matches.length : 0;
-}
-
-function highlightText(text: string, query: string, keyPrefix: string) {
-  if (!query.trim()) return text;
-  const normalizedQuery = query.trim().toLowerCase();
-  const pattern = new RegExp(`(${escapeRegex(query.trim())})`, 'ig');
-  return text.split(pattern).map((part, index) => (
-    part.toLowerCase() === normalizedQuery ? (
-      <mark key={`${keyPrefix}-${index}`} style={{ background: 'rgba(34, 211, 238, 0.22)', color: '#f8fafc', padding: '0 2px', borderRadius: '3px', boxShadow: '0 0 10px rgba(34, 211, 238, 0.18)' }}>{part}</mark>
-    ) : (
-      <React.Fragment key={`${keyPrefix}-${index}`}>{part}</React.Fragment>
-    )
-  ));
-}
-
-function inferDocumentFormat(fileName: string) {
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith('.md')) return 'markdown';
-  if (lower.endsWith('.json')) return 'json';
-  if (lower.endsWith('.py') || lower.endsWith('.ts') || lower.endsWith('.tsx') || lower.endsWith('.js') || lower.endsWith('.jsx') || lower.endsWith('.sh')) return 'source';
-  return 'text';
-}
-
-function syntaxSegments(line: string, format: 'json' | 'source' | 'text') {
-  if (format === 'text') return [{ text: line, color: '#e2e8f0' }];
-  const patterns = [
-    { regex: /(#.*$)/g, color: '#94a3b8' },
-    { regex: /(\/\/.*$)/g, color: '#94a3b8' },
-    { regex: /("([^"\\]|\\.)*")/g, color: '#67e8f9' },
-    { regex: /('([^'\\]|\\.)*')/g, color: '#67e8f9' },
-    { regex: /\b(true|false|null|None)\b/g, color: '#fb7185' },
-    { regex: /\b(def|class|return|if|elif|else|for|while|try|except|import|from|as|await|async|with|const|let|function|export|default|interface|type)\b/g, color: '#f59e0b' },
-    { regex: /\b\d+(\.\d+)?\b/g, color: '#a78bfa' },
-    { regex: /([{}\[\]():.,])/g, color: '#e2e8f0' },
-  ];
-
-  const matches: Array<{ start: number; end: number; color: string }> = [];
-  patterns.forEach(({ regex, color }) => {
-    const localRegex = new RegExp(regex.source, regex.flags);
-    let match;
-    while ((match = localRegex.exec(line)) !== null) {
-      matches.push({ start: match.index, end: match.index + match[0].length, color });
-      if (match[0].length === 0) break;
-    }
-  });
-
-  matches.sort((a, b) => a.start - b.start || b.end - a.end);
-  const filtered: typeof matches = [];
-  let cursor = -1;
-  matches.forEach((match) => {
-    if (match.start >= cursor) {
-      filtered.push(match);
-      cursor = match.end;
-    }
-  });
-
-  const segments: Array<{ text: string; color: string }> = [];
-  let position = 0;
-  filtered.forEach((match) => {
-    if (match.start > position) {
-      segments.push({ text: line.slice(position, match.start), color: '#e2e8f0' });
-    }
-    segments.push({ text: line.slice(match.start, match.end), color: match.color });
-    position = match.end;
-  });
-  if (position < line.length) {
-    segments.push({ text: line.slice(position), color: '#e2e8f0' });
-  }
-  return segments.length ? segments : [{ text: line, color: '#e2e8f0' }];
-}
-
-function renderCodeFrame(content: string, query: string, format: 'json' | 'source' | 'text') {
-  return (
-    <div style={{ display: 'grid', gap: '1px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', overflow: 'hidden' }}>
-      {content.split('\n').map((line, index) => {
-        const queryHit = query.trim() && line.toLowerCase().includes(query.trim().toLowerCase());
-        const segments = syntaxSegments(line, format);
-        return (
-          <div key={`code-line-${index}`} style={{ display: 'grid', gridTemplateColumns: '56px 1fr', background: queryHit ? 'rgba(34, 211, 238, 0.08)' : 'rgba(2, 6, 23, 0.72)' }}>
-            <div style={{ padding: '5px 10px', textAlign: 'right', color: queryHit ? '#67e8f9' : 'rgba(255,255,255,0.38)', borderRight: '1px solid rgba(255,255,255,0.06)', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
-              {index + 1}
-            </div>
-            <div style={{ padding: '5px 14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '0.8rem', lineHeight: 1.7, fontFamily: 'var(--font-mono)' }}>
-              {segments.map((segment, segmentIndex) => (
-                <span key={`seg-${index}-${segmentIndex}`} style={{ color: segment.color }}>
-                  {highlightText(segment.text, query, `code-${index}-${segmentIndex}`)}
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function renderInlineMarkdown(text: string, query: string, keyPrefix: string): React.ReactNode[] {
-  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g).filter(Boolean);
-  return tokens.map((token, index) => {
-    if (/^`[^`]+`$/.test(token)) {
-      return <code key={`${keyPrefix}-${index}`} style={{ fontFamily: 'var(--font-mono)', padding: '2px 6px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.9)', color: '#67e8f9' }}>{highlightText(token.slice(1, -1), query, `${keyPrefix}-code-${index}`)}</code>;
-    }
-    if (/^\*\*[^*]+\*\*$/.test(token)) {
-      return <strong key={`${keyPrefix}-${index}`} style={{ color: '#f8fafc' }}>{highlightText(token.slice(2, -2), query, `${keyPrefix}-strong-${index}`)}</strong>;
-    }
-    if (/^\*[^*]+\*$/.test(token)) {
-      return <em key={`${keyPrefix}-${index}`} style={{ color: '#cbd5e1' }}>{highlightText(token.slice(1, -1), query, `${keyPrefix}-em-${index}`)}</em>;
-    }
-    const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (linkMatch) {
-      return <a key={`${keyPrefix}-${index}`} href={linkMatch[2]} target="_blank" rel="noreferrer" style={{ color: '#67e8f9', textDecoration: 'underline' }}>{highlightText(linkMatch[1], query, `${keyPrefix}-link-${index}`)}</a>;
-    }
-    return <React.Fragment key={`${keyPrefix}-${index}`}>{highlightText(token, query, `${keyPrefix}-text-${index}`)}</React.Fragment>;
-  });
-}
-
-function renderMarkdownSurface(content: string, query: string) {
-  const lines = content.split('\n');
-  const blocks: React.ReactNode[] = [];
-  let codeFenceLanguage = '';
-  let codeFenceBuffer: string[] = [];
-
-  const flushCodeFence = (key: string) => {
-    if (!codeFenceBuffer.length) return;
-    blocks.push(
-      <div key={key} style={{ margin: '14px 0' }}>
-        {renderCodeFrame(codeFenceBuffer.join('\n'), query, codeFenceLanguage === 'json' ? 'json' : 'source')}
-      </div>
-    );
-    codeFenceBuffer = [];
-    codeFenceLanguage = '';
-  };
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('```')) {
-      if (codeFenceLanguage) {
-        flushCodeFence(`code-fence-${index}`);
-      } else {
-        codeFenceLanguage = trimmed.slice(3).trim() || 'source';
-      }
-      return;
-    }
-
-    if (codeFenceLanguage) {
-      codeFenceBuffer.push(line);
-      return;
-    }
-
-    if (!trimmed) {
-      blocks.push(<div key={`gap-${index}`} style={{ height: '10px' }} />);
-      return;
-    }
-
-    const heading = line.match(/^(#{1,6})\s+(.*)$/);
-    if (heading) {
-      const level = heading[1].length;
-      const sizes = ['1.5rem', '1.32rem', '1.16rem', '1rem', '0.92rem', '0.86rem'];
-      blocks.push(
-        <div key={`heading-${index}`} style={{ marginTop: index === 0 ? 0 : '18px', marginBottom: '8px', color: '#f8fafc', fontWeight: 800, letterSpacing: '0.04em', fontSize: sizes[level - 1], textShadow: '0 0 18px rgba(255,255,255,0.1)' }}>
-          {renderInlineMarkdown(heading[2], query, `heading-${index}`)}
-        </div>
-      );
-      return;
-    }
-
-    if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
-      blocks.push(<div key={`hr-${index}`} style={{ height: '1px', margin: '14px 0', background: 'linear-gradient(90deg, transparent, rgba(103,232,249,0.4), transparent)' }} />);
-      return;
-    }
-
-    const quote = line.match(/^\s*>\s+(.*)$/);
-    if (quote) {
-      blocks.push(
-        <div key={`quote-${index}`} style={{ margin: '10px 0', padding: '10px 14px', borderLeft: '2px solid rgba(103,232,249,0.6)', background: 'rgba(15, 23, 42, 0.54)', color: '#cbd5e1', fontStyle: 'italic' }}>
-          {renderInlineMarkdown(quote[1], query, `quote-${index}`)}
-        </div>
-      );
-      return;
-    }
-
-    const unordered = line.match(/^\s*[-*]\s+(.*)$/);
-    if (unordered) {
-      blocks.push(
-        <div key={`li-${index}`} style={{ display: 'grid', gridTemplateColumns: '18px 1fr', gap: '10px', color: '#e2e8f0', margin: '6px 0' }}>
-          <span style={{ color: '#67e8f9' }}>+</span>
-          <div>{renderInlineMarkdown(unordered[1], query, `li-${index}`)}</div>
-        </div>
-      );
-      return;
-    }
-
-    const ordered = line.match(/^\s*(\d+)\.\s+(.*)$/);
-    if (ordered) {
-      blocks.push(
-        <div key={`ol-${index}`} style={{ display: 'grid', gridTemplateColumns: '28px 1fr', gap: '10px', color: '#e2e8f0', margin: '6px 0' }}>
-          <span style={{ color: '#67e8f9', textAlign: 'right' }}>{ordered[1]}.</span>
-          <div>{renderInlineMarkdown(ordered[2], query, `ol-${index}`)}</div>
-        </div>
-      );
-      return;
-    }
-
-    blocks.push(
-      <div key={`p-${index}`} style={{ color: '#e2e8f0', lineHeight: 1.85, margin: '7px 0' }}>
-        {renderInlineMarkdown(line, query, `p-${index}`)}
-      </div>
-    );
-  });
-
-  flushCodeFence('code-fence-final');
-  return <div>{blocks}</div>;
-}
-
-function renderDocumentSurface(doc: OpenDocState, query: string, dictionary: Record<string, string>) {
-  const format = inferDocumentFormat(doc.fileName);
-  const lowerFormat = format as 'markdown' | 'json' | 'source' | 'text';
-
-  if (lowerFormat === 'markdown') {
-    return renderMarkdownSurface(doc.content, query);
-  }
-
-  if (lowerFormat === 'json') {
-    try {
-      const normalized = JSON.stringify(JSON.parse(doc.content), null, 2);
-      return renderCodeFrame(normalized, query, 'json');
-    } catch {
-      return renderCodeFrame(doc.content, query, 'json');
-    }
-  }
-
-  if (lowerFormat === 'source') {
-    return renderCodeFrame(doc.content, query, 'source');
-  }
-
-  if (!doc.content.trim()) {
-    return (
-      <div style={{ color: 'rgba(255,255,255,0.56)', fontStyle: 'italic', letterSpacing: '0.06em' }}>
-        {tt(dictionary, 'core.wave.stream_idle', 'STREAM_IDLE')}
-      </div>
-    );
-  }
-
-  return renderCodeFrame(doc.content, query, 'text');
-}
-
-function formatReplayAge(timestamp: number) {
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  return `${Math.floor(seconds / 3600)}h`;
-}
-
-function ModeField({
-  signals,
-  reducedMotion,
-}: {
-  signals: DashboardSignals;
-  reducedMotion: boolean;
-}) {
-  const ringOpacity = reducedMotion ? 0.12 : 0.18 + signals.activity * 0.06;
-
-  return (
-    <group>
-      {signals.mode === 'STABLE' && (
-        <>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.15, 0]}>
-            <ringGeometry args={[4.5, 4.7, 64]} />
-            <meshBasicMaterial color={signals.palette.secondary} transparent opacity={ringOpacity} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.2, 0]}>
-            <ringGeometry args={[8.2, 8.28, 96]} />
-            <meshBasicMaterial color={signals.palette.emphasis} transparent opacity={0.08} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-        </>
-      )}
-
-      {signals.mode === 'AUDIT' && (
-        <>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-            <ringGeometry args={[4.2, 4.28, 96]} />
-            <meshBasicMaterial color={signals.palette.accent} transparent opacity={0.2} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 1.6, 0]}>
-            <ringGeometry args={[6.6, 6.7, 96]} />
-            <meshBasicMaterial color={signals.palette.secondary} transparent opacity={0.12} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -1.6, 0]}>
-            <ringGeometry args={[6.6, 6.7, 96]} />
-            <meshBasicMaterial color={signals.palette.secondary} transparent opacity={0.12} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-        </>
-      )}
-
-      {signals.mode === 'INCIDENT' && (
-        <>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.2, 0]}>
-            <ringGeometry args={[4.8, 5.05, 96]} />
-            <meshBasicMaterial color={signals.palette.accent} transparent opacity={0.24 + signals.severity * 0.08} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh rotation={[0, 0, Math.PI / 2]} position={[0, 0, 0]}>
-            <torusGeometry args={[5.3, 0.06, 16, 80]} />
-            <meshBasicMaterial color={signals.palette.warning} transparent opacity={0.16} blending={THREE.AdditiveBlending} />
-          </mesh>
-        </>
-      )}
-
-      {signals.mode === 'SEAL' && (
-        <>
-          <Sphere args={[5.1, 26, 26]} position={[0, 0, 0]}>
-            <meshBasicMaterial color={signals.palette.accent} wireframe transparent opacity={0.11} blending={THREE.AdditiveBlending} />
-          </Sphere>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-            <ringGeometry args={[5.25, 5.34, 96]} />
-            <meshBasicMaterial color={signals.palette.warning} transparent opacity={0.18} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-          </mesh>
-        </>
-      )}
-    </group>
-  );
-}
-
-function SceneRig({
-  signals,
-  reducedMotion,
-  cameraMode,
-  focusedNode,
-  controlsRef,
-  sceneBounds,
-}: {
-  signals: DashboardSignals;
-  reducedMotion: boolean;
-  cameraMode: CameraMode;
-  focusedNode: GraphNode | null;
-  controlsRef: React.MutableRefObject<OrbitControlsRef | null>;
-  sceneBounds: { minX: number; maxX: number; minZ: number; maxZ: number };
-}) {
-  const { camera } = useThree();
-  const positionRef = useRef(new THREE.Vector3(0, 34, 0.001));
-  const lookAtRef = useRef(new THREE.Vector3(0, 0, 0));
-  const zoomRef = useRef(30);
-
-  useFrame((_state, delta) => {
-    if (cameraMode === 'manual') {
-      if (controlsRef.current?.target) {
-        const marginX = 10;
-        const marginZ = 10;
-        const target = controlsRef.current.target as THREE.Vector3;
-        const clampedX = THREE.MathUtils.clamp(target.x, sceneBounds.minX - marginX, sceneBounds.maxX + marginX);
-        const clampedZ = THREE.MathUtils.clamp(target.z, sceneBounds.minZ - marginZ, sceneBounds.maxZ + marginZ);
-        const deltaX = clampedX - target.x;
-        const deltaZ = clampedZ - target.z;
-        if (deltaX !== 0 || deltaZ !== 0) {
-          target.set(clampedX, 0, clampedZ);
-          camera.position.x += deltaX;
-          camera.position.z += deltaZ;
-          controlsRef.current.update();
-        }
-      }
-      return;
-    }
-    const topHeight = signals.mode === 'INCIDENT'
-      ? 36
-      : signals.mode === 'AUDIT'
-      ? 34
-      : signals.mode === 'SEAL'
-      ? 33
-      : 35;
-
-    if (cameraMode === 'focus' && focusedNode) {
-      lookAtRef.current.set(focusedNode.position[0], 0, focusedNode.position[2]);
-      positionRef.current.set(focusedNode.position[0], topHeight, focusedNode.position[2] + 0.001);
-      zoomRef.current = focusedNode.type === 'core'
-        ? 44
-        : focusedNode.type === 'edition' || focusedNode.type === 'module'
-        ? 36
-        : 32;
-    } else {
-      lookAtRef.current.set(0, 0, 0);
-      positionRef.current.set(0, topHeight, 0.001);
-      zoomRef.current = signals.mode === 'INCIDENT' ? 26 : signals.mode === 'AUDIT' ? 28 : 30;
-    }
-
-    const lerpFactor = 1 - Math.exp(-delta * (reducedMotion ? 1.4 : 2.2));
-    camera.position.lerp(positionRef.current, lerpFactor);
-    camera.up.set(0, 0, -1);
-
-    if (controlsRef.current?.target) {
-      controlsRef.current.target.lerp(lookAtRef.current, 1 - Math.exp(-delta * 3.2));
-      controlsRef.current.update();
-    }
-
-    if ('zoom' in camera) {
-      const orthoCamera = camera as THREE.OrthographicCamera;
-      orthoCamera.zoom = THREE.MathUtils.lerp(orthoCamera.zoom, zoomRef.current, 1 - Math.exp(-delta * 2.2));
-      orthoCamera.updateProjectionMatrix();
-    }
-    if (!controlsRef.current?.target) {
-      camera.lookAt(lookAtRef.current);
-    }
-  });
-
-  return null;
-}
-
-function ZoomTierTracker({
-  onZoomTierChange,
-  onZoomChange,
-}: {
-  onZoomTierChange: (tier: ZoomTier) => void;
-  onZoomChange?: (zoom: number) => void;
-}) {
-  const { camera } = useThree();
-  const tierRef = useRef<ZoomTier>(deriveZoomTier(('zoom' in camera ? (camera as THREE.OrthographicCamera).zoom : 30)));
-  const lastZoomRef = useRef<number>('zoom' in camera ? (camera as THREE.OrthographicCamera).zoom : 30);
-
-  useFrame(() => {
-    if (!('zoom' in camera)) return;
-    const zoom = (camera as THREE.OrthographicCamera).zoom;
-    const nextTier = deriveZoomTier(zoom);
-    if (nextTier !== tierRef.current) {
-      tierRef.current = nextTier;
-      onZoomTierChange(nextTier);
-    }
-    if (onZoomChange && Math.abs(zoom - lastZoomRef.current) > 0.01) {
-      lastZoomRef.current = zoom;
-      onZoomChange(zoom);
-    }
-  });
-
-  return null;
-}
-
-function CanvasBackgroundSync({
-  background,
-}: {
-  background: string;
-  fog: string;
-}) {
-  const { gl, scene } = useThree();
-
-  useEffect(() => {
-    gl.setClearColor(background || '#020617', 1);
-    scene.background = new THREE.Color(background || '#020617');
-    scene.fog = null;
-  }, [background, gl, scene]);
-
-  return null;
-}
-
-function DotsBackdrop({ color = '#ffffff' }: { color?: string }) {
-  const points = useMemo(() => {
-    const count = 1400;
-    const radius = 140;
-    const positions = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const dist = Math.sqrt(Math.random()) * radius;
-      positions[i * 3] = Math.cos(angle) * dist;
-      positions[i * 3 + 1] = Math.sin(angle) * dist;
-      positions[i * 3 + 2] = 0;
-    }
-    return positions;
-  }, []);
-
-  return (
-    <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]}>
-      <Points positions={points} stride={3} frustumCulled>
-        <PointMaterial
-          size={0.38}
-          color={color}
-          transparent
-          opacity={0.7}
-          depthWrite={false}
-          depthTest={false}
-          sizeAttenuation={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </Points>
-    </group>
-  );
-}
-
-function IntegrityHalo({
-  signals,
-  chainStatus,
-  activeCommand,
-  reducedMotion,
-}: {
-  signals: DashboardSignals;
-  chainStatus?: ChainStatusSnapshot | null;
-  activeCommand?: string | null;
-  reducedMotion: boolean;
-}) {
-  const breached = chainStatus ? !chainStatus.intact : false;
-  const activityBoost = activeCommand ? 0.04 : 0;
-  const shellColor = breached ? signals.palette.accent : signals.palette.secondary;
-  const ringColor = signals.mode === 'SEAL' ? signals.palette.warning : signals.palette.emphasis;
-
-  return (
-    <group>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-        <ringGeometry args={[3.85, 4.04, 128]} />
-        <meshBasicMaterial
-          color={ringColor}
-          transparent
-          opacity={0.14 + signals.chainTrust * 0.09 + activityBoost}
-          blending={THREE.AdditiveBlending}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      <mesh rotation={[0, Math.PI / 2, 0]} position={[0, 0, 0]}>
-        <torusGeometry args={[4.35, 0.05, 20, 144]} />
-        <meshBasicMaterial
-          color={shellColor}
-          transparent
-          opacity={breached ? 0.18 + signals.severity * 0.08 : 0.08 + signals.chainTrust * 0.06}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <Sphere args={[4.7, 28, 28]} position={[0, 0, 0]}>
-        <meshBasicMaterial
-          color={shellColor}
-          wireframe
-          transparent
-          opacity={signals.mode === 'SEAL' ? 0.14 : breached ? 0.1 : 0.05 + signals.activity * 0.03}
-          blending={THREE.AdditiveBlending}
-        />
-      </Sphere>
-    </group>
-  );
-}
-
-function ModeDirectiveField({
-  signals,
-  reducedMotion,
-}: {
-  signals: DashboardSignals;
-  reducedMotion: boolean;
-}) {
-  if (signals.mode !== 'INCIDENT' && signals.mode !== 'SEAL') return null;
-
-  return (
-    <group>
-      {signals.mode === 'INCIDENT' && (
-        <>
-          {[0, 1, 2].map((index) => (
-            <mesh key={`incident-ring-${index}`} rotation={[Math.PI / 2, index * 0.36, index * 0.18]} position={[0, (index - 1) * 1.4, 0]}>
-              <torusGeometry args={[6.4 + index * 0.95, 0.05 + index * 0.01, 18, 120]} />
-              <meshBasicMaterial color={index === 1 ? signals.palette.warning : signals.palette.accent} transparent opacity={0.12 + signals.severity * 0.05 - index * 0.02} blending={THREE.AdditiveBlending} />
-            </mesh>
-          ))}
-          {[0, 1, 2, 3].map((index) => (
-            <mesh key={`incident-column-${index}`} position={[Math.cos(index * (Math.PI / 2)) * 6.8, 0, Math.sin(index * (Math.PI / 2)) * 6.8]}>
-              <cylinderGeometry args={[0.05, 0.18, 11, 10, 1, true]} />
-              <meshBasicMaterial color={signals.palette.accent} transparent opacity={0.12 + signals.severity * 0.04} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-            </mesh>
-          ))}
-        </>
-      )}
-
-      {signals.mode === 'SEAL' && (
-        <>
-          <Sphere args={[7.1, 32, 32]}>
-            <meshBasicMaterial color={signals.palette.warning} wireframe transparent opacity={0.08} blending={THREE.AdditiveBlending} />
-          </Sphere>
-          {[0, 1, 2, 3, 4, 5].map((index) => {
-            const angle = (Math.PI * 2 * index) / 6;
-            return (
-              <group key={`seal-lock-${index}`} position={[Math.cos(angle) * 6.1, Math.sin(angle * 1.5) * 1.7, Math.sin(angle) * 6.1]}>
-                <Sphere args={[0.18, 18, 18]}>
-                  <meshBasicMaterial color={signals.palette.warning} transparent opacity={0.24} blending={THREE.AdditiveBlending} />
-                </Sphere>
-                <mesh rotation={[Math.PI / 2, angle, 0]}>
-                  <ringGeometry args={[0.32, 0.38, 28]} />
-                  <meshBasicMaterial color={signals.palette.emphasis} transparent opacity={0.16} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-                </mesh>
-              </group>
-            );
-          })}
-        </>
-      )}
-    </group>
-  );
-}
+import { WaveMonitor } from './nexus/WaveMonitor';
+import { SentinelDrone } from './nexus/SentinelDrone';
+import { ConnectionBeam } from './nexus/beams';
+import { SystemNode } from './nexus/SystemNode';
+import { SceneErrorBoundary } from './nexus/errorBoundaries';
+import { countQueryMatches, DecryptionHandshake, inferDocumentFormat, renderDocumentSurface } from './nexus/documentSurface';
+import { AggregateClusterBadge, CanvasBackgroundSync, DotsBackdrop, SceneRig, ZoomTierTracker } from './nexus/sceneHelpers';
+import {
+  getNodeCapabilities,
+  getNodeSystem,
+  inferMotionProfile,
+  inferAggregateCluster,
+  mergeGraphNodeAssetOverride,
+  NodeActivityState,
+  resolveLinkedSystemId,
+  shouldRenderNodeForZoomTier,
+} from './nexus/nodeUtils';
+import {
+  AggregateBadge,
+  AssetStageSlot,
+  CameraMode,
+  ChatMessage,
+  EDIT_MODE_SECRET_CODES,
+  EditModeSessionBaseline,
+  MerkleReplayEntry,
+  NodeAssetEditState,
+  OpenDocState,
+  OrbitControlsRef,
+  PendingAssetTarget,
+  QualityTier,
+  ZoomTier,
+} from './nexus/types';
+
+const { MOUSE } = THREE;
 
 const NexusCore = ({
   linkedSystems,
@@ -2465,17 +56,23 @@ const NexusCore = ({
   chainEvents,
   chainStatus,
   activeCommand,
+  stateLatencyMs = null,
 }: NexusCoreProps) => {
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window === 'undefined') return;
+    // Sibling components (SovereignHUD) mount after this one, so their
+    // listeners are not registered yet when this effect runs. Defer the
+    // announcement one tick and persist a flag for late subscribers.
+    const timer = setTimeout(() => {
+      (window as Window & { __NEXUS_CORE_READY?: boolean }).__NEXUS_CORE_READY = true;
       window.dispatchEvent(new Event('NEXUS_CORE_READY'));
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<OpenDocState | null>(null);
   const [unlinkModal, setUnlinkModal] = useState<string | null>(null);
-  const [pulsingNodes, setPulsingNodes] = useState<Set<string>>(new Set());
   const [toastMsg, setToastMsg] = useState<{ msg: string; detail?: string } | null>(null);
   const [qualityTier, setQualityTier] = useState<QualityTier>('ultra');
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -2497,7 +94,6 @@ const NexusCore = ({
   const [familyAssetOverrides, setFamilyAssetOverrides] = useState<NodeAssetFamilyOverrides>({});
   const [canonicalChecked, setCanonicalChecked] = useState(false);
   const [editModeSessionBaseline, setEditModeSessionBaseline] = useState<EditModeSessionBaseline | null>(null);
-  const [isProcessingCanonicalAssets, setIsProcessingCanonicalAssets] = useState(false);
   const [pendingAssetTarget, setPendingAssetTarget] = useState<PendingAssetTarget | null>(null);
   const [assetEditState, setAssetEditState] = useState<NodeAssetEditState>({ enabled: false });
   const [editModeAuthorized, setEditModeAuthorized] = useState(false);
@@ -2505,7 +101,6 @@ const NexusCore = ({
   const [editModePassword, setEditModePassword] = useState('');
   const [selectedSentinelIndex, setSelectedSentinelIndex] = useState<number | null>(null);
   const [sentinelAssetDraft, setSentinelAssetDraft] = useState<Partial<NodeAssetStage> | null>(null);
-  const [linkedSystemScanTimes, setLinkedSystemScanTimes] = useState<Record<string, number>>({});
   const audioContextRef = useRef<AudioContext | null>(null);
   const controlsRef = useRef<OrbitControlsRef | null>(null);
   const assetFileInputRef = useRef<HTMLInputElement>(null);
@@ -2514,12 +109,14 @@ const NexusCore = ({
   const previousChainIntactRef = useRef<boolean | null>(null);
   
   // Authority: Use props from page.tsx
-  const physics = externalPhysics || { H: 0, H_max: 0, eta: 1.0, N: 0, W: 0, gini: 0 };
+  const physics = useMemo(
+    () => externalPhysics || { H: 0, H_max: 0, eta: 1.0, N: 0, W: 0, gini: 0 },
+    [externalPhysics],
+  );
   const drift = typeof externalDrift === 'number' ? externalDrift : 0;
   const merkle = externalMerkle || '00000000000000000000000000000000';
   const t = translations[language] || translations['EN'];
   const primaryLinkedSystem = linkedSystems.find((system) => system.id === activeLinkedSystemId) || linkedSystems[0] || null;
-  const activeSystemIndex = primaryLinkedSystem ? linkedSystems.findIndex((system) => system.id === primaryLinkedSystem.id) : -1;
   const [logs, setLogs] = useState<{ id: number; msg: string }[]>([]);
   const [displayNode, setDisplayNode] = useState<GraphNode | null>(null);
   const deferredDocQuery = useDeferredValue(docQuery);
@@ -2542,11 +139,6 @@ const NexusCore = ({
   const modeLabelText = translateModeLabel(signals.modeLabel, t);
   const modeReasonText = translateReason(signals.modeReason, t);
   const activeVectorText = translateActiveCommand(activeCommand, t);
-  const cameraModeLabel = cameraMode === 'focus'
-    ? tt(t, 'nav.mode.focus', 'FOCUS')
-    : cameraMode === 'manual'
-    ? tt(t, 'nav.mode.manual', 'MANUAL')
-    : tt(t, 'nav.mode.overview', 'OVERVIEW');
   const healthLabel = normalizedEta >= 0.75
     ? t['hud.health.healthy']
     : normalizedEta >= 0.50
@@ -2570,18 +162,6 @@ const NexusCore = ({
   const isTablet = viewportWidth < 1180;
   const isPhone = viewportWidth < 780;
   const isTiny = viewportWidth < 420;
-  const dockWidth = isTiny
-    ? 'calc(100vw - 20px)'
-    : isPhone
-    ? 'calc(100vw - 24px)'
-    : isTablet
-    ? 'min(700px, calc(100vw - 56px))'
-    : 'min(780px, calc(100vw - 500px))';
-  const dockPadding = isPhone
-    ? '12px 12px 14px'
-    : isTablet
-    ? '14px 16px 16px'
-    : '15px 18px 18px';
   const railRight = isTiny ? 10 : isPhone ? 12 : isTablet ? 24 : 72;
   const titleTelemetryWidth = isTiny ? 'min(188px, calc(100vw - 24px))' : isPhone ? 'min(216px, calc(100vw - 26px))' : isTablet ? '238px' : '282px';
   const overlayGlowText = { color: signals.palette.emphasis, textShadow: `0 0 18px ${signals.palette.secondary}3a` } as const;
@@ -2659,35 +239,44 @@ const NexusCore = ({
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const armAudio = async () => {
+    const detach = () => {
+      window.removeEventListener('pointerdown', armAudio);
+      window.removeEventListener('keydown', armAudio);
+    };
+
+    async function armAudio() {
       if (audioContextRef.current) {
         if (audioContextRef.current.state === 'suspended') {
           await audioContextRef.current.resume().catch(() => {});
         }
-        setAudioArmed(audioContextRef.current.state === 'running');
+        const running = audioContextRef.current.state === 'running';
+        setAudioArmed(running);
+        if (running) detach();
         return;
       }
 
       const AudioCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtor) return;
+      if (!AudioCtor) {
+        detach();
+        return;
+      }
 
       try {
         const ctx = new AudioCtor();
         audioContextRef.current = ctx;
         await ctx.resume().catch(() => {});
-        setAudioArmed(ctx.state === 'running');
+        const running = ctx.state === 'running';
+        setAudioArmed(running);
+        if (running) detach();
       } catch {
         setAudioArmed(false);
       }
-    };
+    }
 
     window.addEventListener('pointerdown', armAudio);
     window.addEventListener('keydown', armAudio);
 
-    return () => {
-      window.removeEventListener('pointerdown', armAudio);
-      window.removeEventListener('keydown', armAudio);
-    };
+    return detach;
   }, []);
 
   useEffect(() => {
@@ -2825,8 +414,6 @@ const NexusCore = ({
     };
   }, [selectedSentinelIndex, signals.palette.secondary]);
   const coreNode = useMemo(() => nodesById.get('core') || null, [nodesById]);
-  const cameraControlActive = cameraMode === 'manual';
-  const activeNode = hoveredNode || selectedNode || displayNode;
   const getNodeActivityState = useCallback((node: GraphNode): NodeActivityState => {
     if (!primaryLinkedSystem || linkedSystems.length <= 1) return 'neutral';
     const nodeSystemId = resolveLinkedSystemId(node.id, linkedSystems);
@@ -2873,16 +460,8 @@ const NexusCore = ({
     () => allEdges.filter((edge) => visibleNodeIds.has(edge.from) && visibleNodeIds.has(edge.to)),
     [allEdges, visibleNodeIds],
   );
-  const selectedNodeCapabilities = useMemo(
-    () => getNodeCapabilities(selectedNode, linkedSystems, Boolean(selectedNode?.assetOverride)),
-    [linkedSystems, selectedNode],
-  );
   const selectedNodeAssetProfile = useMemo(
     () => (selectedNode ? getNodeAssetProfile(selectedNode, familyAssetOverrides) : null),
-    [familyAssetOverrides, selectedNode],
-  );
-  const selectedNodeAssetSource = useMemo(
-    () => (selectedNode ? getNodeAssetSource(selectedNode, familyAssetOverrides) : 'fallback'),
     [familyAssetOverrides, selectedNode],
   );
   const selectedAssetStage = useMemo(() => selectedNodeAssetProfile?.appearance || null, [selectedNodeAssetProfile]);
@@ -2902,13 +481,6 @@ const NexusCore = ({
     }),
     [sentinelAssetDraft, sentinelEditProfile.appearance],
   );
-  const selectedAppearanceLabel = useMemo(() => {
-    if (selectedSentinelIndex !== null) return formatAssetLabel(sentinelAppearanceStage);
-    if (!selectedNode || !selectedNodeAssetProfile) return 'UNASSIGNED';
-    if (selectedNode.assetOverride?.appearance?.src) return formatAssetLabel(selectedNodeAssetProfile.appearance);
-    if (selectedNodeAssetSource === 'family' && selectedNodeAssetProfile.appearance.enabled) return formatAssetLabel(selectedNodeAssetProfile.appearance);
-    return 'UNASSIGNED';
-  }, [selectedNode, selectedNodeAssetProfile, selectedNodeAssetSource, selectedSentinelIndex, sentinelAppearanceStage]);
   const effectiveNodeAssetOverrides = useMemo(
     () =>
       Object.fromEntries(
@@ -3064,37 +636,46 @@ const NexusCore = ({
 
 
   // Pulse Vivo: Live Forensic Watcher
-  React.useEffect(() => {
-    const systemsToWatch = linkedSystems
+  const runtimeWatchTargets = useMemo(
+    () => linkedSystems
       .filter((system) => system.accessMode === 'runtime')
-      .map((system) => ({ id: system.id, rootPath: system.rootPath, name: system.name }));
+      .map((system) => ({ id: system.id, rootPath: system.rootPath, name: system.name })),
+    [linkedSystems],
+  );
+  const runtimeWatchKey = useMemo(
+    () => runtimeWatchTargets.map((system) => `${system.id}:${system.rootPath}`).join('|'),
+    [runtimeWatchTargets],
+  );
+  const runtimeWatchTargetsRef = useRef(runtimeWatchTargets);
+  runtimeWatchTargetsRef.current = runtimeWatchTargets;
+  const dictionaryRef = useRef(t);
+  dictionaryRef.current = t;
 
+  React.useEffect(() => {
+    const systemsToWatch = runtimeWatchTargetsRef.current;
     if (!systemsToWatch.length) return;
 
     const sources = systemsToWatch.map((system) => {
-      console.log(`[PULSE_VIVO] Establishing link: ${system.name}`);
       const es = new EventSource(`/api/projects/watch?path=${encodeURIComponent(system.rootPath)}`);
 
       es.addEventListener('add', (e) => {
         try {
           const data = JSON.parse(e.data);
-          console.log(`[PULSE_VIVO] ENTRY_ADDED:`, data.name);
           setLinkedSystems((prev) => prev.map((entry) => {
             if (entry.id !== system.id) return entry;
             if (entry.entries.find((item) => item.name === data.name)) return entry;
             return { ...entry, entries: [...entry.entries, { name: data.name, type: data.type }] };
           }));
-          setLogs(prev => [{ id: Date.now(), msg: `[${tt(t, 'watch.add', 'CREATED')}] ${system.name}/${data.name}` }, ...prev].slice(0, 5));
-        } catch(ex){}
+          setLogs(prev => [{ id: Date.now(), msg: `[${tt(dictionaryRef.current, 'watch.add', 'CREATED')}] ${system.name}/${data.name}` }, ...prev].slice(0, 5));
+        } catch {}
       });
 
       es.addEventListener('unlink', (e) => {
         try {
           const data = JSON.parse(e.data);
-          console.log(`[PULSE_VIVO] ENTRY_PURGED:`, data.name);
           setLinkedSystems((prev) => prev.map((entry) => entry.id === system.id ? { ...entry, entries: entry.entries.filter((item) => item.name !== data.name) } : entry));
-          setLogs(prev => [{ id: Date.now(), msg: `[${tt(t, 'watch.unlink', 'DELETED')}] ${system.name}/${data.name}` }, ...prev].slice(0, 5));
-        } catch(ex){}
+          setLogs(prev => [{ id: Date.now(), msg: `[${tt(dictionaryRef.current, 'watch.unlink', 'DELETED')}] ${system.name}/${data.name}` }, ...prev].slice(0, 5));
+        } catch {}
       });
 
       return es;
@@ -3103,7 +684,7 @@ const NexusCore = ({
     return () => {
       sources.forEach((source) => source.close());
     };
-  }, [linkedSystems.map((system) => `${system.id}:${system.rootPath}:${system.accessMode || 'runtime'}`).join('|'), setLinkedSystems, t]);
+  }, [runtimeWatchKey, setLinkedSystems]);
 
 
   const focusNode = useCallback((node: GraphNode | null) => {
@@ -3143,82 +724,21 @@ const NexusCore = ({
     };
   }, [coreNode, focusNode, resetView]);
 
-  const focusLinkedRoot = useCallback(() => {
-    const linkedRoot = primaryLinkedSystem
-      ? allNodes.find((node) => node.id === `project-${primaryLinkedSystem.id}`) || null
-      : allNodes.find((node) => node.cluster === 'linked-root' && node.type !== 'link-placeholder') || null;
-    if (linkedRoot) {
-      focusNode(linkedRoot);
-      return;
-    }
-    setSelectedNodeId(null);
-    setCameraMode('overview');
-  }, [allNodes, focusNode, primaryLinkedSystem]);
-
-  const refreshLinkedSystem = useCallback(async (system: LinkedSystem) => {
-    if (!system.rootPath) return;
-    try {
-      const res = await fetch('/api/actions/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectPath: system.rootPath }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!payload?.success) {
-        throw new Error(payload?.error || 'SCAN_FAILED');
-      }
-      setLinkedSystems((prev) =>
-        prev.map((entry) => (entry.id === system.id ? { ...entry, entries: payload.entries || [] } : entry)),
-      );
-      setLinkedSystemScanTimes((prev) => ({ ...prev, [system.id]: Date.now() }));
-    } catch (error: unknown) {
-      setToastMsg({ msg: 'SCAN_FAILED', detail: getErrorMessage(error, system.name) });
-      setTimeout(() => setToastMsg(null), 2400);
-    }
-  }, [setLinkedSystems]);
-
-  const refreshAllLinkedSystems = useCallback(async () => {
-    if (!linkedSystems.length) return;
-    setToastMsg({ msg: 'SCANNING_ALL_LINKED_SYSTEMS', detail: `${linkedSystems.length}` });
-    try {
-      await Promise.all(linkedSystems.map((system) => refreshLinkedSystem(system)));
-      setToastMsg({ msg: 'SCAN_COMPLETE', detail: 'LINKED_SYSTEMS_REFRESHED' });
-    } catch {
-      setToastMsg({ msg: 'SCAN_FAILED', detail: 'ONE_OR_MORE_SYSTEMS' });
-    }
-    setTimeout(() => setToastMsg(null), 2400);
-  }, [linkedSystems, refreshLinkedSystem]);
-
-  const cycleActiveSystem = useCallback(() => {
-    if (linkedSystems.length <= 1) return;
-    const nextIndex = activeSystemIndex >= 0 ? (activeSystemIndex + 1) % linkedSystems.length : 0;
-    const nextSystem = linkedSystems[nextIndex];
-    setActiveLinkedSystemId(nextSystem.id);
-    const nextRoot = allNodes.find((node) => node.id === `project-${nextSystem.id}`) || null;
-    if (nextRoot) {
-      focusNode(nextRoot);
-    }
-  }, [activeSystemIndex, allNodes, focusNode, linkedSystems, setActiveLinkedSystemId]);
-
-  const focusNextDocument = useCallback(() => {
-    const ecosystemDocNodes = primaryLinkedSystem
-      ? allNodes.filter((node) => node.type === 'file' && resolveLinkedSystemId(node.id, linkedSystems) === primaryLinkedSystem.id)
-      : [];
-    const docNodes = ecosystemDocNodes.length > 0 ? ecosystemDocNodes : allNodes.filter((node) => node.type === 'file');
-    if (!docNodes.length) return;
-    const currentIndex = selectedNode ? docNodes.findIndex((node) => node.id === selectedNode.id) : -1;
-    const nextNode = docNodes[(currentIndex + 1 + docNodes.length) % docNodes.length];
-    focusNode(nextNode);
-  }, [allNodes, focusNode, linkedSystems, primaryLinkedSystem, selectedNode]);
-
   const executeNodeAction = useCallback(async (node: GraphNode) => {
     if (!node.action) return;
     setToastMsg({ msg: tt(t, 'toast.executing', 'EXECUTING: {label}...', { label: node.label }) });
     try {
-      await fetch(node.action);
+      const res = await fetch(node.action, { method: 'POST' });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload?.success) {
+        throw new Error(payload?.detail || payload?.error || `HTTP_${res.status}`);
+      }
       setToastMsg({ msg: tt(t, 'toast.success', 'SUCCESS: {label} COMPLETED.', { label: node.label }) });
-    } catch {
-      setToastMsg({ msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: node.label }) });
+    } catch (error: unknown) {
+      setToastMsg({
+        msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: node.label }),
+        detail: getErrorMessage(error, 'ACTION_ERROR'),
+      });
     }
     setTimeout(() => setToastMsg(null), 3000);
   }, [t]);
@@ -3251,7 +771,10 @@ const NexusCore = ({
       const res = await fetch('/api/actions/read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath: node.filePath }),
+        body: JSON.stringify({
+          filePath: node.filePath,
+          systemRoot: linkedSystem?.accessMode === 'runtime' ? linkedSystem.rootPath : undefined,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -3381,15 +904,6 @@ const NexusCore = ({
     patchNodeAssetSettings(nodeId, 'appearance', { scale: draft.scale });
   }, [nodeAssetDrafts, patchNodeAssetSettings]);
 
-  const revertSelectedAssetEdits = useCallback(() => {
-    if (!selectedNode) return;
-    setNodeAssetDrafts((prev) => {
-      const next = { ...prev };
-      delete next[selectedNode.id];
-      return next;
-    });
-  }, [selectedNode]);
-
   const nudgeSelectedAssetOffset = useCallback((axis: 'x' | 'z', delta: number) => {
     if (!selectedNode || !selectedNodeAssetProfile) return;
     const slot: AssetStageSlot = 'appearance';
@@ -3444,12 +958,6 @@ const NexusCore = ({
       });
   }, []);
 
-  const rotateSentinelAssetY = useCallback((deltaDegrees: number) => {
-    const currentRotation = sentinelAppearanceStage.rotation || [0, 0, 0];
-    const nextRotation: [number, number, number] = [...currentRotation] as [number, number, number];
-    nextRotation[1] += THREE.MathUtils.degToRad(deltaDegrees);
-    patchSentinelAssetSettings({ rotation: nextRotation });
-  }, [patchSentinelAssetSettings, sentinelAppearanceStage.rotation]);
   const rotateSentinelAssetX = useCallback((deltaDegrees: number) => {
     const currentRotation = sentinelAppearanceStage.rotation || [0, 0, 0];
     const nextRotation: [number, number, number] = [...currentRotation] as [number, number, number];
@@ -3461,14 +969,6 @@ const NexusCore = ({
     const nextScale = THREE.MathUtils.clamp((sentinelAppearanceStage.scale ?? 1) + delta, 0.1, 8);
     patchSentinelAssetSettings({ scale: nextScale });
   }, [patchSentinelAssetSettings, sentinelAppearanceStage.scale]);
-  const draftSentinelAssetOffset = useCallback((offset: [number, number, number]) => {
-    setSentinelAssetDraft((prev) => ({ ...(prev || {}), offset }));
-  }, []);
-  const commitSentinelAssetOffset = useCallback(() => {
-    const offset = sentinelAssetDraft?.offset;
-    if (!offset) return;
-    patchSentinelAssetSettings({ offset });
-  }, [patchSentinelAssetSettings, sentinelAssetDraft?.offset]);
   const draftSentinelAssetRotation = useCallback((rotation: [number, number, number]) => {
     setSentinelAssetDraft((prev) => ({ ...(prev || {}), rotation }));
   }, []);
@@ -3485,31 +985,6 @@ const NexusCore = ({
     if (typeof scale !== 'number') return;
     patchSentinelAssetSettings({ scale });
   }, [patchSentinelAssetSettings, sentinelAssetDraft?.scale]);
-
-  const clearSelectedNodeAssetOverride = useCallback(() => {
-    if (!selectedNode) return;
-    void fetch('/api/node-assets', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodeId: selectedNode.id }),
-    })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (payload?.success && payload.overrides) {
-          setNodeAssetOverrides(payload.overrides);
-          setFamilyAssetOverrides(payload.familyProfiles || {});
-          setToastMsg({ msg: `${selectedNode.label} // GLB RESET` });
-          setTimeout(() => setToastMsg(null), 2400);
-        } else {
-          setToastMsg({ msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: selectedNode.label }), detail: payload?.error || 'ASSET_CLEAR_ERROR' });
-          setTimeout(() => setToastMsg(null), 3200);
-        }
-      })
-      .catch((error: unknown) => {
-        setToastMsg({ msg: tt(t, 'toast.failure', 'FAILURE: {label} FAILED.', { label: selectedNode.label }), detail: getErrorMessage(error, 'ASSET_CLEAR_ERROR') });
-        setTimeout(() => setToastMsg(null), 3200);
-      });
-  }, [selectedNode, t]);
 
   const handleAssetInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -3558,49 +1033,6 @@ const NexusCore = ({
         event.target.value = '';
       });
   }, [nodesById, pendingAssetTarget]);
-
-  const processCanonicalAssets = useCallback(() => {
-    if (isProcessingCanonicalAssets) return;
-    setIsProcessingCanonicalAssets(true);
-
-    void fetch('/api/node-assets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'process-canonical-assets' }),
-    })
-      .then((response) => response.json())
-      .then((payload) => {
-        if (payload?.success) {
-          const processedTargets: string[] = Array.isArray(payload.processedTargets) ? payload.processedTargets : [];
-          const missingTargets: string[] = Array.isArray(payload.missingTargets) ? payload.missingTargets : [];
-          setNodeAssetOverrides(payload.overrides || {});
-          setFamilyAssetOverrides(payload.familyProfiles || {});
-
-          const processedSummary = processedTargets.length
-            ? processedTargets.map((target) => target.replace(/-/g, '_').toUpperCase()).join(' // ')
-            : 'NO_CANONICAL_TARGETS_FOUND';
-          const missingSummary = missingTargets.length
-            ? `MISSING // ${missingTargets.map((target) => target.replace(/-/g, '_').toUpperCase()).join(' // ')}`
-            : processedSummary;
-
-          setToastMsg({
-            msg: `3D_ASSETS // ${processedTargets.length} PROCESSED`,
-            detail: missingSummary,
-          });
-          setTimeout(() => setToastMsg(null), 3600);
-        } else {
-          setToastMsg({ msg: '3D_ASSET_PROCESS_FAILURE', detail: payload?.error || 'CANONICAL_ASSET_PROCESS_ERROR' });
-          setTimeout(() => setToastMsg(null), 3200);
-        }
-      })
-      .catch((error: unknown) => {
-        setToastMsg({ msg: '3D_ASSET_PROCESS_FAILURE', detail: getErrorMessage(error, 'CANONICAL_ASSET_PROCESS_ERROR') });
-        setTimeout(() => setToastMsg(null), 3200);
-      })
-      .finally(() => {
-        setIsProcessingCanonicalAssets(false);
-      });
-  }, [isProcessingCanonicalAssets]);
 
   const submitChatPrompt = useCallback(async () => {
     const prompt = chatPrompt.trim();
@@ -3685,92 +1117,11 @@ const NexusCore = ({
     [],
   );
   const inspectorNode = selectedNode || sentinelInspectorNode || null;
-  const inspectorCapabilities = selectedNode
-    ? selectedNodeCapabilities
-    : ({
-        kind: 'passive',
-        accessMode: 'none',
-        system: null,
-        canExecute: false,
-        canOpenDocument: false,
-        canAssignAsset: true,
-        canClearAsset: false,
-        canFocus: false,
-        blockReason: null,
-      } satisfies NodeCapabilities);
-  const assetEditorVisible = Boolean(inspectorNode);
   const dockBottom = isPhone ? 12 : isTablet ? 16 : 22;
-  const dockExpanded = assetEditState.enabled && Boolean(inspectorNode);
   const dockReferenceNode = inspectorNode || displayNode;
   const dockAccent = dockReferenceNode?.color || signals.palette.accent;
-  const dockAccessMode: NodeAccessMode = inspectorNode ? (inspectorCapabilities.accessMode || 'none') : (primaryLinkedSystem?.accessMode || 'none');
-  const dockAccessLabel = dockAccessMode === 'none'
-    ? 'ROOT'
-    : tt(t, `hud.access.${dockAccessMode}`, dockAccessMode.toUpperCase());
-  const dockTrustText = translateTrust(signals.chainTrustLabel, t);
   const dockTitle = dockReferenceNode?.label || primaryLinkedSystem?.name || tt(t, 'common.idle', 'IDLE');
   const dockTitleColor = dockReferenceNode?.color || signals.palette.emphasis;
-  const dockDescriptor = inspectorNode
-    ? inspectorNode.tooltip
-    : dockReferenceNode?.tooltip || (
-        primaryLinkedSystem
-          ? `${tt(t, 'core.active_system', 'SYSTEM')}: ${primaryLinkedSystem.name}`
-          : modeReasonText
-      );
-  const formatScanAge = useCallback((timestamp?: number) => {
-    if (!timestamp) return 'NEVER';
-    const deltaMs = Date.now() - timestamp;
-    const seconds = Math.max(0, Math.floor(deltaMs / 1000));
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `${days}d`;
-  }, []);
-  const dockSystemLabel = selectedSentinelIndex !== null
-    ? 'SENTINEL_FAMILY'
-    : inspectorCapabilities.system?.name || primaryLinkedSystem?.name || 'ROOT';
-  const dockMetaLabel = inspectorNode
-    ? `${tt(t, 'dock.mod_identifier', 'NODE_INSPECTOR')} // ${tt(t, `graph.type.${inspectorNode.type}`, inspectorNode.type.toUpperCase())}`
-    : `TACTICAL_DOCK // ${cameraModeLabel}`;
-  const dockStatusItems = inspectorNode
-    ? [
-        { id: 'type', label: tt(t, 'dock.mod_identifier', 'NODE'), value: tt(t, `graph.type.${inspectorNode.type}`, inspectorNode.type.toUpperCase()) },
-        { id: 'status', label: tt(t, 'common.status', 'STATUS'), value: modeLabelText },
-        { id: 'system', label: tt(t, 'core.active_system', 'SYSTEM'), value: dockSystemLabel },
-        { id: 'access', label: tt(t, 'common.mode', 'MODE'), value: dockAccessLabel },
-      ]
-    : [
-        { id: 'mode', label: tt(t, 'common.mode', 'MODE'), value: cameraModeLabel },
-        { id: 'status', label: tt(t, 'common.status', 'STATUS'), value: modeLabelText },
-        { id: 'system', label: tt(t, 'core.active_system', 'SYSTEM'), value: dockSystemLabel },
-        { id: 'trust', label: tt(t, 'common.trust', 'TRUST'), value: dockTrustText },
-      ];
-  const dockCommandItems: DockCommandItem[] = [
-    {
-      id: 'edit-mode',
-      label: assetEditState.enabled ? 'EXIT_EDIT_MODE' : 'EDIT_MODE',
-      onClick: () => setAssetEditState((prev) => ({ ...prev, enabled: !prev.enabled })),
-      active: assetEditState.enabled,
-      tone: 'warning' as const,
-    },
-    {
-      id: 'process-3d-assets',
-      label: isProcessingCanonicalAssets
-        ? tt(t, 'dock.process_3d_assets.processing', 'PROCESSING_3D_ASSETS')
-        : tt(t, 'dock.process_3d_assets', 'PROCESS_3D_ASSETS'),
-      onClick: processCanonicalAssets,
-      active: isProcessingCanonicalAssets,
-      tone: 'accent' as const,
-    },
-    { id: 'reset', label: tt(t, 'nav.reset_view', 'RESET_VIEW'), onClick: resetView },
-    { id: 'focus-core', label: tt(t, 'nav.focus_core', 'FOCUS_CORE'), onClick: () => focusNode(coreNode) },
-    { id: 'focus-linked', label: tt(t, 'nav.focus_linked', 'FOCUS_ACTIVE_SYSTEM'), onClick: focusLinkedRoot },
-    { id: 'next-doc', label: tt(t, 'nav.next_doc', 'NEXT_DOC'), onClick: focusNextDocument },
-    { id: 'cycle', label: tt(t, 'nav.cycle_systems', 'CYCLE_SYSTEMS'), onClick: cycleActiveSystem, visible: linkedSystems.length > 1 },
-  ].filter((item) => item.visible !== false);
   const handleEditModeToggle = useCallback(() => {
     if (assetEditState.enabled) {
       setNodeAssetDrafts({});
@@ -3804,36 +1155,6 @@ const NexusCore = ({
     setEditModePromptOpen(false);
     setEditModePassword('');
   }, [editModePassword, familyAssetOverrides, nodeAssetOverrides, resolvedEditModeSecret]);
-  const dockContextMaxHeight = assetEditorVisible
-    ? (isPhone ? '42vh' : '38vh')
-    : undefined;
-  const dockCommandButtonStyle = (item: DockCommandItem): React.CSSProperties => {
-    const borderColor = item.active
-      ? dockAccent
-      : item.tone === 'warning'
-      ? signals.palette.warning
-      : signals.palette.border;
-    const background = item.active
-      ? 'rgba(255,255,255,0.1)'
-      : item.tone === 'accent'
-      ? 'rgba(255,255,255,0.05)'
-      : 'rgba(255,255,255,0.025)';
-    return {
-      padding: isPhone ? '8px 10px' : '9px 14px',
-      minHeight: isPhone ? '36px' : '38px',
-      fontSize: isPhone ? '0.42rem' : '0.46rem',
-      letterSpacing: isPhone ? '1.5px' : '1.9px',
-      borderColor,
-      background,
-      boxShadow: item.active ? `0 0 0 1px ${dockAccent}26 inset, 0 0 18px ${dockAccent}18` : 'none',
-      color: item.active ? signals.palette.emphasis : 'rgba(255,255,255,0.86)',
-      gap: '0',
-      justifyContent: 'center',
-      borderRadius: '0',
-      flex: isPhone ? '1 1 132px' : '1 1 auto',
-      fontFamily: 'var(--font-mono)',
-    };
-  };
   const persistEditModeSession = useCallback(async (nextOverrides: Record<string, GraphNodeAssetOverride>, nextFamilyProfiles: NodeAssetFamilyOverrides) => {
     const response = await fetch('/api/node-assets', {
       method: 'PUT',
@@ -3882,161 +1203,6 @@ const NexusCore = ({
       setTimeout(() => setToastMsg(null), 2800);
     }
   }, [editModeSessionBaseline, persistEditModeSession]);
-  const renderDockCommandStrip = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0', alignItems: 'stretch', border: `1px solid ${signals.palette.border}`, background: 'rgba(255,255,255,0.015)' }}>
-        {dockCommandItems.map((item, index) => (
-          <button
-            key={item.id}
-            onClick={item.onClick}
-            className="btn-nexus"
-            style={{
-              ...dockCommandButtonStyle(item),
-              borderWidth: '0',
-              borderRight: index < dockCommandItems.length - 1 ? `1px solid ${signals.palette.border}` : '0',
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-  const renderDockContextActions = () => {
-    if (!inspectorNode) return null;
-
-    const isImperium = inspectorNode.id === 'imperium';
-    const imperiumSystems = isImperium ? linkedSystems : [];
-
-    const actionItems: DockCommandItem[] = [
-      ...(inspectorCapabilities.kind !== 'access' && inspectorCapabilities.canFocus
-        ? [{ id: 'focus', label: tt(t, 'nav.focus_core', 'FOCUS'), onClick: () => focusNode(inspectorNode) }]
-        : []),
-      ...(inspectorCapabilities.kind === 'access'
-        ? [{ id: 'link', label: tt(t, 'graph.link.label', 'LINK PROJECT'), onClick: () => setUnlinkModal('link'), tone: 'accent' as const }]
-        : []),
-      ...(inspectorCapabilities.canExecute
-        ? [{ id: 'execute', label: tt(t, 'common.execute', 'EXECUTE'), onClick: () => { void executeNodeAction(inspectorNode); }, tone: 'accent' as const }]
-        : []),
-      ...(inspectorCapabilities.canOpenDocument || inspectorCapabilities.blockReason
-        ? [{
-            id: 'open',
-            label: openDoc?.filePath === inspectorNode.filePath ? tt(t, 'common.close', 'CLOSE') : tt(t, 'common.open', 'OPEN'),
-            onClick: () => { void openNodeDocument(inspectorNode); },
-          }]
-        : []),
-      ...(inspectorCapabilities.system
-        ? [{ id: 'unlink', label: tt(t, 'hud.unlink_system', 'UNLINK'), onClick: () => setUnlinkModal('unlink'), tone: 'warning' as const }]
-        : []),
-  ];
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {isImperium && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px', border: `1px solid ${signals.palette.border}`, background: 'rgba(8,12,22,0.6)' }}>
-            <div style={{ fontSize: '0.46rem', letterSpacing: '2px', color: 'rgba(255,255,255,0.52)' }}>IMPERIUM_CONSOLE</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              <button
-                onClick={() => void refreshAllLinkedSystems()}
-                className="btn-nexus"
-                style={dockCommandButtonStyle({ id: 'scan-all', label: 'SCAN_ALL', onClick: () => {} })}
-              >
-                SCAN_ALL
-              </button>
-              <button
-                onClick={() => { void fetch('/api/actions/crystallize'); }}
-                className="btn-nexus"
-                style={dockCommandButtonStyle({ id: 'crystallize', label: 'CRYSTALLIZE_CORE', onClick: () => {} })}
-              >
-                CRYSTALLIZE_CORE
-              </button>
-              <button
-                onClick={() => { void fetch('/api/actions/audit'); }}
-                className="btn-nexus"
-                style={dockCommandButtonStyle({ id: 'audit', label: 'AUDIT_CORE', onClick: () => {} })}
-              >
-                AUDIT_CORE
-              </button>
-              <button
-                onClick={() => { void fetch('/api/actions/seal'); }}
-                className="btn-nexus"
-                style={dockCommandButtonStyle({ id: 'seal', label: 'SEAL_CORE', onClick: () => {} })}
-              >
-                SEAL_CORE
-              </button>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {imperiumSystems.length === 0 && (
-                <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.55)' }}>NO_LINKED_SYSTEMS</div>
-              )}
-              {imperiumSystems.map((system) => (
-                <div key={system.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 8px', border: `1px solid ${signals.palette.border}`, background: 'rgba(10,16,26,0.72)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '0.48rem', letterSpacing: '1.6px', color: 'rgba(255,255,255,0.72)' }}>
-                    <span>{system.name}</span>
-                    <span>{system.accessMode ? system.accessMode.toUpperCase() : 'RUNTIME'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', fontSize: '0.44rem', letterSpacing: '1.4px', color: 'rgba(255,255,255,0.5)' }}>
-                    <span>{`ENTRIES ${system.entries.length}`}</span>
-                    <span>{`LAST_SCAN ${formatScanAge(linkedSystemScanTimes[system.id])}`}</span>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    <button
-                      onClick={() => {
-                        setActiveLinkedSystemId(system.id);
-                        const node = allNodes.find((n) => n.id === `project-${system.id}`) || null;
-                        if (node) focusNode(node);
-                      }}
-                      className="btn-nexus"
-                      style={dockCommandButtonStyle({ id: `focus-${system.id}`, label: 'FOCUS', onClick: () => {} })}
-                    >
-                      {`FOCUS`}
-                    </button>
-                    <button
-                      onClick={() => setActiveLinkedSystemId(system.id)}
-                      className="btn-nexus"
-                      style={dockCommandButtonStyle({ id: `active-${system.id}`, label: 'SET_ACTIVE', onClick: () => {} })}
-                    >
-                      {`SET_ACTIVE`}
-                    </button>
-                    <button
-                      onClick={() => void refreshLinkedSystem(system)}
-                      className="btn-nexus"
-                      style={dockCommandButtonStyle({ id: `scan-${system.id}`, label: 'SCAN', onClick: () => {} })}
-                    >
-                      {`SCAN`}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setActiveLinkedSystemId(system.id);
-                        setUnlinkModal('unlink');
-                      }}
-                      className="btn-nexus"
-                      style={dockCommandButtonStyle({ id: `unlink-${system.id}`, label: 'UNLINK', onClick: () => {} })}
-                    >
-                      {`UNLINK`}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px' }}>
-          {actionItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={item.onClick}
-              className="btn-nexus"
-              style={dockCommandButtonStyle(item)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  };
   const sentinelAnchor = (primaryLinkedSystem && nodesById.get(`project-${primaryLinkedSystem.id}`)?.position) || nodesById.get('core')?.position || [0, 0, 0];
   const showRecoveryHint = cameraZoom < 3 || cameraZoom > 90;
   const canvasBackdropStyle: React.CSSProperties = {
@@ -4104,8 +1270,6 @@ const NexusCore = ({
               setSelectedSentinelIndex(index);
             }}
             onOpenAssetPicker={openSentinelAssetPicker}
-            onDraftAssetOffset={draftSentinelAssetOffset}
-            onCommitAssetOffset={commitSentinelAssetOffset}
             onDraftAssetRotation={draftSentinelAssetRotation}
             onCommitAssetRotation={commitSentinelAssetRotation}
             onDraftAssetScale={draftSentinelAssetScale}
@@ -4135,9 +1299,7 @@ const NexusCore = ({
             <SystemNode
               key={node.id}
               node={node}
-              isPulsing={pulsingNodes.has(node.id)}
               isSelected={selectedNodeId === node.id}
-            eta={physics.eta}
             drift={drift}
             signals={signals}
             zoomTier={zoomTier}
@@ -4272,6 +1434,7 @@ const NexusCore = ({
         qualityTier={qualityTier}
         audioArmed={audioArmed}
         reducedMotion={reducedMotion}
+        stateLatencyMs={stateLatencyMs}
         open={isRightRailOpen}
         onToggle={() => setIsRightRailOpen((current) => !current)}
       />
@@ -4831,6 +1994,7 @@ interface NexusCoreProps {
   chainEvents: ChainEventSnapshot[];
   chainStatus: ChainStatusSnapshot | null;
   activeCommand: string | null;
+  stateLatencyMs?: number | null;
 }
 
 export default NexusCore;

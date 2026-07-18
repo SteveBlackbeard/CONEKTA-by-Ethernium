@@ -12,7 +12,9 @@ export interface StateSnapshot {
   last_check?: string;
   physics: PhysicsSnapshot;
   drift_kl: number;
-  crystallizer_version?: string;
+  crystallizer_version?: string | null;
+  /** false when the runtime STATE.json is not present yet */
+  available?: boolean;
 }
 
 export interface ChainEventSnapshot {

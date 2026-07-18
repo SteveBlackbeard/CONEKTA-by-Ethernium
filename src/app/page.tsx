@@ -43,6 +43,59 @@ function sameChainEvents(left: ChainEventSnapshot[], right: ChainEventSnapshot[]
   });
 }
 
+// Reschedules a polling callback with backoff on failure. The first fetch
+// always runs; subsequent polls pause while the tab is hidden and resume
+// immediately when it becomes visible again.
+function usePolling(poll: () => Promise<boolean>, baseIntervalMs: number, maxIntervalMs: number) {
+  React.useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let failureStreak = 0;
+
+    const schedule = (delay: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        if (typeof document !== 'undefined' && document.hidden) {
+          schedule(baseIntervalMs);
+          return;
+        }
+        void run();
+      }, delay);
+    };
+
+    const run = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      let ok = false;
+      try {
+        ok = await poll();
+      } catch {
+        ok = false;
+      }
+      inFlight = false;
+      if (cancelled) return;
+      failureStreak = ok ? 0 : Math.min(failureStreak + 1, 4);
+      schedule(ok ? baseIntervalMs : Math.min(maxIntervalMs, baseIntervalMs * 2 ** failureStreak));
+    };
+
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        void run();
+      }
+    };
+
+    void run();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [baseIntervalMs, maxIntervalMs, poll]);
+}
+
 export default function Home() {
   const [linkedSystems, setLinkedSystems] = useState<LinkedSystem[]>([]);
   const [activeLinkedSystemId, setActiveLinkedSystemId] = useState<string | null>(null);
@@ -51,16 +104,23 @@ export default function Home() {
   const [chainEvents, setChainEvents] = useState<ChainEventSnapshot[]>([]);
   const [chainStatus, setChainStatus] = useState<ChainStatusSnapshot | null>(null);
   const [activeCommand, setActiveCommand] = useState<string | null>(null);
+  const [stateLatencyMs, setStateLatencyMs] = useState<number | null>(null);
 
   const refreshSystemState = useCallback(() => {
+    const startedAt = performance.now();
     return fetch('/api/state')
       .then(r => r.json())
       .then((nextState: StateSnapshot) => {
+        setStateLatencyMs(Math.max(1, Math.round(performance.now() - startedAt)));
         startTransition(() => {
           setSystemState((previous) => sameStateSnapshot(previous, nextState) ? previous : nextState);
         });
+        return nextState.available !== false;
       })
-      .catch(() => {});
+      .catch(() => {
+        setStateLatencyMs(null);
+        return false;
+      });
   }, []);
 
   const refreshChainEvents = useCallback(() => {
@@ -71,8 +131,9 @@ export default function Home() {
         startTransition(() => {
           setChainEvents((previous) => sameChainEvents(previous, nextEvents) ? previous : nextEvents);
         });
+        return true;
       })
-      .catch(() => {});
+      .catch(() => false);
   }, []);
 
   const refreshChainStatus = useCallback(() => {
@@ -82,25 +143,14 @@ export default function Home() {
         startTransition(() => {
           setChainStatus((previous) => sameChainStatus(previous, nextStatus) ? previous : nextStatus);
         });
+        return true;
       })
-      .catch(() => {});
+      .catch(() => false);
   }, []);
 
-  React.useEffect(() => {
-    refreshSystemState();
-    refreshChainEvents();
-    refreshChainStatus();
-
-    const stateInterval = setInterval(refreshSystemState, 3500);
-    const chainInterval = setInterval(refreshChainEvents, 7000);
-    const verifyInterval = setInterval(refreshChainStatus, 18000);
-
-    return () => {
-      clearInterval(stateInterval);
-      clearInterval(chainInterval);
-      clearInterval(verifyInterval);
-    };
-  }, [refreshChainEvents, refreshChainStatus, refreshSystemState]);
+  usePolling(refreshSystemState, 3500, 30000);
+  usePolling(refreshChainEvents, 7000, 45000);
+  usePolling(refreshChainStatus, 18000, 90000);
 
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-black">
@@ -122,6 +172,7 @@ export default function Home() {
         chainEvents={chainEvents}
         chainStatus={chainStatus}
         activeCommand={activeCommand}
+        stateLatencyMs={stateLatencyMs}
       />
 
       {/* Primary UI Layer */}
