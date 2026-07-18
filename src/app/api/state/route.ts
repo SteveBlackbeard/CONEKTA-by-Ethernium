@@ -1,21 +1,24 @@
 import { NextResponse } from 'next/server';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { promises as fs } from 'fs';
+import { getStateFilePath } from '@/lib/runtimePaths';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Read STATE.json from the repository root (one level up from Continuity Conekta)
-    const statePath = join(process.cwd(), '..', 'STATE.json');
-    const raw = readFileSync(statePath, 'utf-8');
+    const raw = await fs.readFile(getStateFilePath(), 'utf-8');
     const state = JSON.parse(raw);
-    return NextResponse.json(state);
+    return NextResponse.json({ ...state, available: true });
   } catch {
+    // No crystallized state yet. This is a normal condition for a standalone
+    // CONEKTA install, so answer 200 with a flag instead of a 500 on every poll.
     return NextResponse.json({
-      merkle_root: "error_reading_state",
+      available: false,
+      merkle_root: 'awaiting_crystallization',
       last_check: new Date().toISOString(),
       physics: { H: 0, H_max: 0, eta: 0, N: 0, W: 0, gini: 0 },
       drift_kl: 0,
-      crystallizer_version: "3.0.1",
-    }, { status: 500 });
+      crystallizer_version: null,
+    });
   }
 }

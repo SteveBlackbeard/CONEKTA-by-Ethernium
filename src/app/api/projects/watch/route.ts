@@ -1,24 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import chokidar from 'chokidar';
 import path from 'path';
+import { resolveLinkedDirectory } from '@/lib/runtimePaths';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const encoder = new TextEncoder();
-  const searchParams = req.nextUrl.searchParams;
-  const projectPath = searchParams.get('path');
+  const projectPath = req.nextUrl.searchParams.get('path');
 
   if (!projectPath) {
     return new NextResponse('Missing project path', { status: 400 });
   }
 
+  const absolutePath = resolveLinkedDirectory(projectPath);
+  if (!absolutePath) {
+    return new NextResponse('Project path not found', { status: 404 });
+  }
+
   const stream = new ReadableStream({
     start(controller) {
-      // Create relative path for chokidar
-      const absolutePath = path.resolve(process.cwd(), '..', projectPath);
-      
-      console.log(`[SOVEREIGN_WATCHER] Initializing on: ${absolutePath}`);
+      let closed = false;
 
       const watcher = chokidar.watch(absolutePath, {
         persistent: true,
@@ -26,40 +28,41 @@ export async function GET(req: NextRequest) {
         depth: 1, // Only watch top-level for performance
       });
 
+      // Named SSE events so the client can subscribe via addEventListener.
       const sendEvent = (event: string, data: Record<string, string>) => {
-        const payload = `data: ${JSON.stringify({ event, ...data })}\n\n`;
-        controller.enqueue(encoder.encode(payload));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
+        }
       };
 
       watcher
-        .on('add', (filePath) => sendEvent('add', { 
-          name: path.basename(filePath), 
-          type: 'file' 
-        }))
-        .on('addDir', (dirPath) => sendEvent('add', { 
-          name: path.basename(dirPath), 
-          type: 'dir' 
-        }))
-        .on('unlink', (filePath) => sendEvent('unlink', { 
-          name: path.basename(filePath) 
-        }))
-        .on('unlinkDir', (dirPath) => sendEvent('unlink', { 
-          name: path.basename(dirPath) 
-        }))
-        .on('change', (filePath) => sendEvent('change', { 
-          name: path.basename(filePath) 
-        }));
+        .on('add', (filePath) => sendEvent('add', { name: path.basename(filePath), type: 'file' }))
+        .on('addDir', (dirPath) => sendEvent('add', { name: path.basename(dirPath), type: 'dir' }))
+        .on('unlink', (filePath) => sendEvent('unlink', { name: path.basename(filePath) }))
+        .on('unlinkDir', (dirPath) => sendEvent('unlink', { name: path.basename(dirPath) }))
+        .on('change', (filePath) => sendEvent('change', { name: path.basename(filePath) }));
 
-      // Keep connection alive with a heartbeat
       const heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(': heartbeat\n\n'));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(': heartbeat\n\n'));
+        } catch {
+          closed = true;
+        }
       }, 15000);
 
       req.signal.addEventListener('abort', () => {
-        console.log(`[SOVEREIGN_WATCHER] Closing watcher for: ${projectPath}`);
+        closed = true;
         clearInterval(heartbeat);
-        watcher.close();
-        controller.close();
+        void watcher.close();
+        try {
+          controller.close();
+        } catch {
+          // Already closed by the runtime.
+        }
       });
     },
   });

@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
-import { join } from 'path';
 import crypto from 'crypto';
 import { getErrorCode, getErrorMessage } from '@/lib/errors';
+import { getEventChainFilePath, getStateFilePath } from '@/lib/runtimePaths';
 
 export interface ChainEvent {
   seq: number;
@@ -14,8 +14,10 @@ export interface ChainEvent {
   chain_hash: string;
 }
 
-const CHAIN_FILE = join(process.cwd(), '..', 'EVENT_CHAIN.jsonl');
-const STATE_FILE = join(process.cwd(), '..', 'STATE.json');
+// Serializes appends so two concurrent actions can't read the same tail and
+// duplicate a sequence number.
+let appendQueue: Promise<unknown> = Promise.resolve();
+let lastEventCache: ChainEvent | null = null;
 
 function computeHash(data: string): string {
   return crypto.createHash('sha256').update(data).digest('hex');
@@ -23,30 +25,31 @@ function computeHash(data: string): string {
 
 async function getStateHash(): Promise<string> {
   try {
-    const stateStr = await fs.readFile(STATE_FILE, 'utf-8');
+    const stateStr = await fs.readFile(getStateFilePath(), 'utf-8');
     return computeHash(stateStr.trim());
   } catch {
     return '0'.repeat(64);
   }
 }
 
-export async function appendEvent(type: string, payload: unknown): Promise<ChainEvent> {
-  let seq = 0;
-  let parent_hash = '0'.repeat(64);
-  let previous_output_hash = '0'.repeat(64);
-  
+async function readLastEvent(): Promise<ChainEvent | null> {
+  if (lastEventCache) return lastEventCache;
   try {
-    const content = await fs.readFile(CHAIN_FILE, 'utf-8');
+    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
     const lines = content.trim().split('\n').filter(Boolean);
-    if (lines.length > 0) {
-      const lastEvent = JSON.parse(lines[lines.length - 1]) as ChainEvent;
-      seq = lastEvent.seq + 1;
-      parent_hash = lastEvent.chain_hash;
-      previous_output_hash = lastEvent.output_hash;
-    }
+    if (lines.length === 0) return null;
+    lastEventCache = JSON.parse(lines[lines.length - 1]) as ChainEvent;
+    return lastEventCache;
   } catch {
-    // File doesn't exist or is empty
+    return null;
   }
+}
+
+async function appendEventUnsafe(type: string, payload: unknown): Promise<ChainEvent> {
+  const lastEvent = await readLastEvent();
+  const seq = lastEvent ? lastEvent.seq + 1 : 0;
+  const parent_hash = lastEvent ? lastEvent.chain_hash : '0'.repeat(64);
+  const previous_output_hash = lastEvent ? lastEvent.output_hash : '0'.repeat(64);
 
   const timestamp = new Date().toISOString();
   const output_hash = await getStateHash();
@@ -67,13 +70,20 @@ export async function appendEvent(type: string, payload: unknown): Promise<Chain
 
   const newEvent: ChainEvent = { ...eventCore, chain_hash };
 
-  await fs.appendFile(CHAIN_FILE, JSON.stringify(newEvent) + '\n', 'utf-8');
+  await fs.appendFile(getEventChainFilePath(), JSON.stringify(newEvent) + '\n', 'utf-8');
+  lastEventCache = newEvent;
   return newEvent;
+}
+
+export function appendEvent(type: string, payload: unknown): Promise<ChainEvent> {
+  const next = appendQueue.then(() => appendEventUnsafe(type, payload));
+  appendQueue = next.catch(() => {});
+  return next;
 }
 
 export async function verifyChain(): Promise<{ intact: boolean; error?: string }> {
   try {
-    const content = await fs.readFile(CHAIN_FILE, 'utf-8');
+    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
     const lines = content.trim().split('\n').filter(Boolean);
     
     let expectedParentHash = '0'.repeat(64);
@@ -109,10 +119,10 @@ export async function verifyChain(): Promise<{ intact: boolean; error?: string }
 
 export async function getEvents(limit = 10): Promise<ChainEvent[]> {
   try {
-    const content = await fs.readFile(CHAIN_FILE, 'utf-8');
+    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
     const lines = content.trim().split('\n').filter(Boolean);
-    const events = lines.map(l => JSON.parse(l)).reverse().slice(0, limit);
-    return events;
+    // Only parse the tail we actually return.
+    return lines.slice(-limit).map((line) => JSON.parse(line)).reverse();
   } catch {
     return [];
   }
