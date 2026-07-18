@@ -40,3 +40,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# conekta local runtime state (STATE.json, EVENT_CHAIN.jsonl)
+/runtime/
+
+# managed node asset overrides
+/config/node-asset-overrides.json
+/config/node-asset-family-overrides.json
+/public/assets/nodes/overrides/

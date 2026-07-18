@@ -6,6 +6,9 @@ This repository was extracted from the former `nexus-dashboard/` folder in Conti
 
 ## Runtime model
 
+- CONEKTA is standalone: all runtime artifacts (`STATE.json`, `EVENT_CHAIN.jsonl`) live under the **runtime root**, which defaults to `<repo>/runtime` and can be pointed at a real Continuity Legacy checkout with `CONEKTA_RUNTIME_ROOT` (see `.env.example`).
+- The AUDIT / CRYSTALLIZE / SEAL actions execute python scripts from `CONEKTA_SCRIPTS_DIR` (default `<runtime root>/scripts`). When the scripts are not installed, the API answers `501 SCRIPT_NOT_AVAILABLE` honestly instead of pretending to run them.
+- File reads through `/api/actions/read` are sandboxed: only paths inside the runtime root or inside an explicitly linked system root are allowed; path traversal is rejected with `403`.
 - `CONTINUITY LEGACY` remains the metacore at the center of the graph.
 - Linked projects are modeled as sovereign spheres, not as a single merged blob.
 - The default view is `ecosystem overview`: multiple linked systems remain visible while one system can be active and focused.
