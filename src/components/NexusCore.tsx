@@ -85,7 +85,7 @@ const NexusCore = ({
   const [isRightRailOpen, setIsRightRailOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { id: 'chat-system', role: 'system', content: 'CLAWDBOT LINK READY // LOCAL BRIDGE STANDBY' },
+    { id: 'chat-system', role: 'system', content: 'SENESCHAL READY // "ayuda" PARA COMANDOS LOCALES // FRUGAL BRIDGE STANDBY' },
   ]);
   const [chatPrompt, setChatPrompt] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
@@ -1034,8 +1034,8 @@ const NexusCore = ({
       });
   }, [nodesById, pendingAssetTarget]);
 
-  const submitChatPrompt = useCallback(async () => {
-    const prompt = chatPrompt.trim();
+  const submitChatPrompt = useCallback(async (overridePrompt?: string) => {
+    const prompt = (overridePrompt ?? chatPrompt).trim();
     if (!prompt || chatBusy) return;
 
     const userMessage: ChatMessage = {
@@ -1048,14 +1048,14 @@ const NexusCore = ({
     setChatBusy(true);
 
     try {
-      const response = await fetch('/api/chat/bridge', {
+      const response = await fetch('/api/seneschal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!payload?.success) {
-        throw new Error(payload?.error || 'CHAT_BRIDGE_FAILURE');
+        throw new Error(payload?.error || 'SENESCHAL_FAILURE');
       }
       setChatMessages((prev) => [
         ...prev,
@@ -1063,6 +1063,7 @@ const NexusCore = ({
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: String(payload.reply || 'NO_RESPONSE'),
+          source: payload.source === 'local' || payload.source === 'frugal' ? payload.source : undefined,
         },
       ]);
     } catch (error: unknown) {
@@ -1071,7 +1072,7 @@ const NexusCore = ({
         {
           id: `assistant-error-${Date.now()}`,
           role: 'assistant',
-          content: `LINK FAILURE // ${getErrorMessage(error) || 'CHAT_BRIDGE_FAILURE'}`,
+          content: `LINK FAILURE // ${getErrorMessage(error) || 'SENESCHAL_FAILURE'}`,
         },
       ]);
     } finally {
@@ -1498,10 +1499,10 @@ const NexusCore = ({
         >
           <div style={{ display: 'grid', gap: '5px', paddingBottom: '10px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ ...overlayGlowText, fontSize: isPhone ? '0.56rem' : '0.62rem', fontWeight: 800, letterSpacing: '3px' }}>
-              CLAWDBOT_LINK
+              SENESCHAL
             </div>
             <div style={{ ...overlaySoftText, fontSize: '0.46rem', letterSpacing: '1.8px', lineHeight: 1.5 }}>
-              LOCAL CHAT SURFACE // TOOL-CALL EMULATION READY
+              ECOSYSTEM STEWARD // L1 LOCAL FIRST // FRUGAL BRIDGE
             </div>
           </div>
 
@@ -1523,19 +1524,42 @@ const NexusCore = ({
                 }}
               >
                 <div style={{ fontSize: '0.36rem', letterSpacing: '1.8px', opacity: 0.58, marginBottom: '5px' }}>
-                  {message.role === 'user' ? 'OPERATOR' : message.role === 'assistant' ? 'CLAWDBOT' : 'SYSTEM'}
+                  {message.role === 'user'
+                    ? 'OPERATOR'
+                    : message.role === 'assistant'
+                    ? `SENESCHAL${message.source === 'local' ? ' // L1_LOCAL' : message.source === 'frugal' ? ' // FRUGAL' : ''}`
+                    : 'SYSTEM'}
                 </div>
                 {message.content}
               </div>
             ))}
             {chatBusy && (
               <div style={{ color: signals.palette.secondary, fontSize: '0.48rem', letterSpacing: '2px' }}>
-                CLAWDBOT // THINKING...
+                SENESCHAL // RESOLVING...
               </div>
             )}
           </div>
 
           <div style={{ paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'grid', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {(['status', 'verify', 'eventos'] as const).map((command) => (
+                <button
+                  key={command}
+                  onClick={() => { void submitChatPrompt(command); }}
+                  disabled={chatBusy}
+                  className="btn-nexus"
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '0.4rem',
+                    letterSpacing: '1.8px',
+                    opacity: chatBusy ? 0.5 : 1,
+                    borderColor: signals.palette.border,
+                  }}
+                >
+                  {command.toUpperCase()}
+                </button>
+              ))}
+            </div>
             <textarea
               value={chatPrompt}
               onChange={(event) => setChatPrompt(event.target.value)}
@@ -1545,7 +1569,7 @@ const NexusCore = ({
                   void submitChatPrompt();
                 }
               }}
-              placeholder="SEND ORDER TO CLAWDBOT..."
+              placeholder="ORDEN PARA SENESCHAL... ('ayuda' = comandos)"
               style={{
                 width: '100%',
                 minHeight: isPhone ? '72px' : '84px',

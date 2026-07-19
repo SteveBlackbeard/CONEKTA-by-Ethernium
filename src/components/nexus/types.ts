@@ -7,7 +7,13 @@ import { NodeAssetFamilyOverrides } from '@/lib/nodeAssets';
 
 export type QualityTier = 'ultra' | 'balanced' | 'safe';
 export type OpenDocState = { fileName: string; filePath: string; content: string; truncated: boolean };
-export type ChatMessage = { id: string; role: 'user' | 'assistant' | 'system'; content: string };
+export type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  /** How the reply was resolved: deterministic local intent or the Frugal bridge. */
+  source?: 'local' | 'frugal';
+};
 export type CameraMode = 'overview' | 'focus' | 'manual';
 export type ZoomTier = 'detail' | 'cluster' | 'overview';
 export type MerkleReplayEntry = { id: number; hash: string; eventType: string; chainTrust: number; drift: number; timestamp: number };
