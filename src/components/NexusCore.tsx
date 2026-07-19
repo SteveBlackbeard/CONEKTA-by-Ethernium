@@ -33,7 +33,6 @@ import {
   ChatMessage,
   EDIT_MODE_SECRET_CODES,
   EditModeSessionBaseline,
-  MerkleReplayEntry,
   NodeAssetEditState,
   OpenDocState,
   OrbitControlsRef,
@@ -80,7 +79,6 @@ const NexusCore = ({
   const [cameraMode, setCameraMode] = useState<CameraMode>('overview');
   const [zoomTier, setZoomTier] = useState<ZoomTier>('cluster');
   const [cameraZoom, setCameraZoom] = useState(30);
-  const [merkleReplay, setMerkleReplay] = useState<MerkleReplayEntry[]>([]);
   const [docQuery, setDocQuery] = useState('');
   const [isRightRailOpen, setIsRightRailOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -179,24 +177,6 @@ const NexusCore = ({
   useEffect(() => {
     setDocQuery('');
   }, [openDoc?.filePath]);
-
-  useEffect(() => {
-    setMerkleReplay((previous) => {
-      const latestEventType = chainEvents[0]?.type || 'STATE_SYNC';
-      if (previous[0]?.hash === merkle && previous[0]?.eventType === latestEventType) {
-        return previous;
-      }
-      const nextEntry: MerkleReplayEntry = {
-        id: Date.now(),
-        hash: merkle,
-        eventType: latestEventType,
-        chainTrust: signals.chainTrust,
-        drift,
-        timestamp: Date.now(),
-      };
-      return [nextEntry, ...previous].slice(0, 7);
-    });
-  }, [chainEvents, drift, merkle, signals.chainTrust]);
 
   useEffect(() => {
     const updateViewport = () => setViewportWidth(window.innerWidth);
@@ -1112,7 +1092,6 @@ const NexusCore = ({
     ? tt(t, 'viewer.format.source', 'SOURCE_STREAM')
     : tt(t, 'viewer.format.text', 'TEXT_STREAM');
   const docMatchCount = openDoc ? countQueryMatches(openDoc.content, deferredDocQuery) : 0;
-  const topReplay = merkleReplay.slice(0, 5);
   const resolvedEditModeSecret = useMemo(
     () => String.fromCharCode(...EDIT_MODE_SECRET_CODES),
     [],
@@ -1431,7 +1410,6 @@ const NexusCore = ({
         linkedSystems={linkedSystems}
         primaryLinkedSystem={primaryLinkedSystem}
         activeVectorText={activeVectorText}
-        topReplay={topReplay}
         qualityTier={qualityTier}
         audioArmed={audioArmed}
         reducedMotion={reducedMotion}

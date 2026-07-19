@@ -4,6 +4,7 @@ import { join, extname } from 'path';
 import { GraphNodeAssetOverride } from '@/lib/graphData';
 import { CANONICAL_ASSET_FILES, CanonicalAssetTarget, NodeAssetFamily, NodeAssetFamilyOverrides } from '@/lib/nodeAssets';
 import { getErrorMessage } from '@/lib/errors';
+import { appendEvent } from '@/lib/eventChain';
 
 export const runtime = 'nodejs';
 
@@ -268,6 +269,13 @@ export async function POST(request: Request) {
       };
       await saveOverrides(overrides);
     }
+
+    // Chronolith: record the asset binding as a forensic event.
+    await appendEvent('ASSET_LINKED', {
+      target: family || nodeId,
+      slot,
+      file: file.name,
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

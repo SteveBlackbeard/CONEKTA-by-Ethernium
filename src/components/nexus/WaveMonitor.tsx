@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { LinkedSystem } from '@/lib/graphData';
 import { ChainEventSnapshot, DashboardSignals, PhysicsSnapshot } from '@/lib/telemetry';
 import { translateModeLabel, translateReason, translateSeverity, translateTrust, tt } from '@/lib/i18n';
-import { MerkleReplayEntry, QualityTier } from './types';
-import { formatReplayAge } from './nodeUtils';
+import { QualityTier } from './types';
+import { ChronolithTimeline } from './ChronolithTimeline';
 
 // SOVEREIGN SIDE RAIL
 export function WaveMonitor({
@@ -20,7 +20,6 @@ export function WaveMonitor({
   linkedSystems,
   primaryLinkedSystem,
   activeVectorText,
-  topReplay,
   qualityTier,
   audioArmed,
   reducedMotion,
@@ -40,7 +39,6 @@ export function WaveMonitor({
   linkedSystems: LinkedSystem[];
   primaryLinkedSystem: LinkedSystem | null;
   activeVectorText: string;
-  topReplay: MerkleReplayEntry[];
   qualityTier: QualityTier;
   audioArmed: boolean;
   reducedMotion: boolean;
@@ -280,36 +278,7 @@ export function WaveMonitor({
           {latestChainEvent && <div style={{ color: palette.accent, fontSize: '0.44rem', letterSpacing: '2px' }}>{tt(dictionary, 'core.recent_chain_event', 'RECENT_CHAIN_EVENT')}: {latestChainEvent.type}</div>}
         </div>
 
-        <div style={{ paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '7px' }}>
-          <div style={{ ...softText, fontSize: '0.46rem', letterSpacing: '3px' }}>{tt(dictionary, 'replay.title', 'MERKLE_REPLAY')}</div>
-          {topReplay.length > 0 ? (
-            <>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '5px', height: '26px' }}>
-                {topReplay.map((entry, index) => (
-                  <div
-                    key={entry.id}
-                    style={{
-                      flex: 1,
-                      height: `${Math.max(8, (1 - Math.min(1, entry.drift)) * 26)}px`,
-                      borderRadius: '999px',
-                      background: index === 0 ? palette.warning : entry.chainTrust < 0.7 ? palette.accent : palette.emphasis,
-                      opacity: 0.28 + (topReplay.length - index) * 0.12,
-                    }}
-                  />
-                ))}
-              </div>
-              {topReplay.slice(0, 3).map((entry) => (
-                <div key={`rail-replay-${entry.id}`} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '0.42rem', letterSpacing: '1.5px', color: 'rgba(255,255,255,0.74)' }}>
-                  <span style={{ color: palette.emphasis }}>{entry.hash.slice(0, 8).toUpperCase()}</span>
-                  <span>{entry.eventType}</span>
-                  <span style={{ color: palette.secondary }}>{formatReplayAge(entry.timestamp)}</span>
-                </div>
-              ))}
-            </>
-          ) : (
-            <div style={{ ...faintText, fontSize: '0.44rem', fontStyle: 'italic' }}>{tt(dictionary, 'replay.empty', 'NO_REPLAY_EVENTS')}</div>
-          )}
-        </div>
+        <ChronolithTimeline signals={signals} dictionary={dictionary} active={open} compact={isPhone} />
 
         <div style={{ paddingTop: '6px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ ...softText, fontSize: '0.44rem', letterSpacing: '3px' }}>{tt(dictionary, 'core.wave.event_chain_stream', 'EVENT_CHAIN_STREAM')}</div>

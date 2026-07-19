@@ -5,8 +5,9 @@
 // deterministically (L1) with zero LLM cost; everything else is forwarded to
 // the Ethernium Frugal bridge enriched with real ecosystem context.
 import { promises as fs } from 'fs';
-import { getEvents, verifyChain, ChainEvent } from '@/lib/eventChain';
+import { appendEvent, getEvents, verifyChain, ChainEvent } from '@/lib/eventChain';
 import { getAdapterConfig, getAdapterStatuses, invokeFrugalChat } from '@/lib/localAdapters';
+import { getErrorMessage } from '@/lib/errors';
 import { getRuntimeRoot, getScriptsDir, getStateFilePath } from '@/lib/runtimePaths';
 
 export type SeneschalSource = 'local' | 'frugal';
@@ -179,10 +180,36 @@ export async function askSeneschal(prompt: string): Promise<SeneschalReply> {
     };
   }
 
-  const result = await invokeFrugalChat(buildFrugalEnvelope(prompt, context));
+  let result;
+  try {
+    result = await invokeFrugalChat(buildFrugalEnvelope(prompt, context));
+  } catch (error: unknown) {
+    // The bridge is configured but unreachable (service down, timeout). Stay
+    // useful: report the failure and fall back to the local status report.
+    return {
+      reply: [
+        `FRUGAL_BRIDGE_INALCANZABLE // ${getErrorMessage(error, 'BRIDGE_ERROR')}`,
+        'Comandos locales siguen disponibles (escribe "ayuda").',
+        '',
+        buildStatusReport(context),
+      ].join('\n'),
+      source: 'local',
+      intent: 'bridge-unreachable',
+      status: 'degraded',
+    };
+  }
+
   const reply = [result?.response || 'NO_RESPONSE', result?.next ? `NEXT // ${result.next}` : '']
     .filter(Boolean)
     .join('\n');
+
+  // Chronolith: only escalations are chronicled — L1 answers are free and
+  // would otherwise flood the chain with noise.
+  await appendEvent('SENESCHAL_CONSULT', {
+    prompt: prompt.slice(0, 160),
+    mode: result?.mode || 'chat',
+    status: result?.status || 'success',
+  }).catch(() => {});
 
   return {
     reply,

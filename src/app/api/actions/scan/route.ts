@@ -3,6 +3,7 @@ import { readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { getErrorMessage } from '@/lib/errors';
 import { resolveLinkedDirectory } from '@/lib/runtimePaths';
+import { appendEvent } from '@/lib/eventChain';
 
 const EXCLUDE = ['.git', 'node_modules', '__pycache__', '.pytest_cache', '.venv', 'dist', '.next', '.egg-info'];
 
@@ -44,6 +45,12 @@ export async function POST(request: Request) {
     } catch (err: unknown) {
       return NextResponse.json({ success: false, error: `Cannot read directory: ${getErrorMessage(err)}` }, { status: 500 });
     }
+
+    // Chronolith: record the scan as a forensic event.
+    await appendEvent('SYSTEM_SCAN', {
+      rootPath: resolvedRoot,
+      entryCount: entries.length,
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, entries, rootPath: resolvedRoot });
 

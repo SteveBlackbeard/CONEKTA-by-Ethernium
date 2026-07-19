@@ -16,7 +16,6 @@ export type ChatMessage = {
 };
 export type CameraMode = 'overview' | 'focus' | 'manual';
 export type ZoomTier = 'detail' | 'cluster' | 'overview';
-export type MerkleReplayEntry = { id: number; hash: string; eventType: string; chainTrust: number; drift: number; timestamp: number };
 export type AggregateBadge = {
   id: string;
   parentId: string;
