@@ -19,6 +19,24 @@ This repository was extracted from the former `nexus-dashboard/` folder in Conti
   - `TOOLS`
   - `SYSTEM`
 
+## Seneschal and Chronolith
+
+- **SENESCHAL** — ecosystem steward behind the `CHAT` rail. Operational intents
+  (`status`, `verify`, `eventos`, `ayuda`) resolve deterministically at L1 with
+  no LLM cost; anything else is forwarded to the Ethernium Frugal bridge wrapped
+  in a real ecosystem context envelope. Each reply is labeled with how it was
+  resolved (`L1_LOCAL` or `FRUGAL`). API: `POST /api/seneschal`, `GET /api/seneschal`.
+- **CHRONOLITH** — forensic chronicler over the `EVENT_CHAIN`. Scans, asset
+  bindings and Frugal escalations are appended as hash-linked events; the right
+  rail renders the timeline with a per-event verification mark and a chain-wide
+  `SEALED` / `BREACHED` state. `GET /api/chronolith/export` downloads the full
+  history sealed with a sha256 digest over the canonical chain, so a copy can be
+  verified offline.
+
+Chain integrity note: event hashing uses canonical JSON with recursively sorted
+keys. Chains produced before this (which excluded payloads from the hash) will
+not verify and must be re-anchored.
+
 ## Current capabilities
 
 - Live dashboard signals derived from state, drift, chain integrity, actions, and linked-system count.
