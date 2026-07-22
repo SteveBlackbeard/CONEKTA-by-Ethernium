@@ -1,0 +1,519 @@
+﻿{
+    "schema":  "ethernium.personal.file-manifest/1",
+    "repository":  "ETHERNIUM-PERSONAL-CONEKTA",
+    "version":  "0.1.0",
+    "generated_at":  "2026-07-22T01:27:33.7500389Z",
+    "file_count":  102,
+    "files":  [
+                  {
+                      "path":  ".claude/launch.json",
+                      "bytes":  207,
+                      "sha256":  "aaaba188d178d2dc1862e655cf7059a38f25e6f1c83753fe5dbf3d57a2b810b9"
+                  },
+                  {
+                      "path":  ".env.example",
+                      "bytes":  1407,
+                      "sha256":  "50fd6052036092828abea9f7b6e9192f447c5d41519263f1cd6f54165a062f1b"
+                  },
+                  {
+                      "path":  ".gitattributes",
+                      "bytes":  99,
+                      "sha256":  "9708556288534f4676464889a99342553a9409f104e7e231b1230eeb6193647a"
+                  },
+                  {
+                      "path":  ".github/workflows/ci.yml",
+                      "bytes":  273,
+                      "sha256":  "63304d8b045b94aa2f20cd9f69f220b707185218403cd8c8baa3d1e19321c214"
+                  },
+                  {
+                      "path":  ".gitignore",
+                      "bytes":  706,
+                      "sha256":  "2e59c2578b42fd8a9fb81dcb3417685192ab04e425bc49800addca9db25e146d"
+                  },
+                  {
+                      "path":  "docs/ADAPTER_CONTRACT.md",
+                      "bytes":  1201,
+                      "sha256":  "e7d196d889bae76bbe3a1e67f3927a33b3f716663de009c4f907953e72cdf36f"
+                  },
+                  {
+                      "path":  "docs/HOW_TO_USE_CONEKTA.md",
+                      "bytes":  1325,
+                      "sha256":  "2ea9aca4290c12feeb7c75c3bb276888d26898529eb6f8715043d24d82535e09"
+                  },
+                  {
+                      "path":  "docs/NODE_ASSET_PIPELINE.md",
+                      "bytes":  9856,
+                      "sha256":  "fbb7d8303a416b5ad4961bfc9dcfd79ebbe65b1424ab7384ccf42b02a0558a81"
+                  },
+                  {
+                      "path":  "eslint.config.mjs",
+                      "bytes":  868,
+                      "sha256":  "122ec7bf3e861d423a3d991277faa3dc487ab2cec4445df8e5f6cd001a79a377"
+                  },
+                  {
+                      "path":  "MIGRATION_STATUS.md",
+                      "bytes":  2612,
+                      "sha256":  "efd610554a70e50bffe28f9423ba22650ae46f67fbe5584680e1272685934ec9"
+                  },
+                  {
+                      "path":  "next.config.ts",
+                      "bytes":  362,
+                      "sha256":  "592002bf1443a4485b50cd9923197f457e27a0460637e20130a347a6c068536d"
+                  },
+                  {
+                      "path":  "package.json",
+                      "bytes":  929,
+                      "sha256":  "80eeed3477b98a5ed31038376f3eb0d15e0e83972e4c475a934b8ecdf95bc0e3"
+                  },
+                  {
+                      "path":  "package-lock.json",
+                      "bytes":  257120,
+                      "sha256":  "2e531615d4d9b8e8bf064b0c25b00fc3f7e65b1f75c7fd9c620ba5e186c8def7"
+                  },
+                  {
+                      "path":  "PERSONAL_LINE.md",
+                      "bytes":  173,
+                      "sha256":  "7991f549a4dd2a997c9c9d9dd8386577d791fb3e0a3fb6f3d15e570f1be50e32"
+                  },
+                  {
+                      "path":  "postcss.config.mjs",
+                      "bytes":  94,
+                      "sha256":  "dfac7ac2d86d326a0e5adb024e7943c181393ed17a5fcb8f0315b24c7da6ddde"
+                  },
+                  {
+                      "path":  "public/assets/branding/dawdad.png",
+                      "bytes":  105356,
+                      "sha256":  "0b37e0a57c4a6aebb014c48037f950038fe6b2283e89565f4305e05aac7021a0"
+                  },
+                  {
+                      "path":  "public/assets/nodes/cluster/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/cluster/agents/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/cluster/dashboard/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/cluster/documents/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/cluster/system/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/cluster/tools/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/core/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/core/Core0.glb",
+                      "bytes":  198968,
+                      "sha256":  "12b825381a79cdaefdbfaddae7e4b4507f9ed95167e18d34e68b65205af9b48e"
+                  },
+                  {
+                      "path":  "public/assets/nodes/document/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/lite/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/lite/Core1.glb",
+                      "bytes":  33772,
+                      "sha256":  "e692d15e28576e33261716889779e32519af6b35f8c534778210361340864393"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/omega/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/omega/Core3.glb",
+                      "bytes":  33772,
+                      "sha256":  "27c8011028bf7d9e9dd5e8e52700b4fad44ae458f404f54577c592ba4eba1906"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/pro/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/edition/pro/Core2.glb",
+                      "bytes":  33772,
+                      "sha256":  "0e61f6e0e1c5b4581c822345de9cec0949d84c86c4610631f0c4140e041854dc"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/auditor/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/auditor/Coreconnection.glb",
+                      "bytes":  34024,
+                      "sha256":  "52648da43b2ef376b2412c404334f2ff00a43f100c8b566d22086eafbd8d4723"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/crystallizer/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/crystallizer/Coreconnection.glb",
+                      "bytes":  34024,
+                      "sha256":  "52648da43b2ef376b2412c404334f2ff00a43f100c8b566d22086eafbd8d4723"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/guardian/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/engine/guardian/Coreconnection.glb",
+                      "bytes":  34024,
+                      "sha256":  "52648da43b2ef376b2412c404334f2ff00a43f100c8b566d22086eafbd8d4723"
+                  },
+                  {
+                      "path":  "public/assets/nodes/folder/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/imperium/.gitkeep",
+                      "bytes":  2,
+                      "sha256":  "e16f1596201850fd4a63680b27f603cb64e67176159be3d8ed78a4403fdb1700"
+                  },
+                  {
+                      "path":  "public/assets/nodes/linked-root/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/linked-root/Corerealconnection.glb",
+                      "bytes":  33940,
+                      "sha256":  "7b1039ba64e7edc356ad64b4716b6e110d22f5ba1013a977465596656f042c20"
+                  },
+                  {
+                      "path":  "public/assets/nodes/link-placeholder/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/module/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/sentinel/.gitkeep",
+                      "bytes":  1,
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+                  },
+                  {
+                      "path":  "public/assets/nodes/sentinel/sentinels.glb",
+                      "bytes":  353612,
+                      "sha256":  "39100522940b5fa02425d7f50d75b343d4dd9cb97a9b89c7bfc101af9dc10df0"
+                  },
+                  {
+                      "path":  "public/file.svg",
+                      "bytes":  391,
+                      "sha256":  "2b67812c325c199a02536cdbeea0c593a72f707d323b72ee3e08dbab06753bd4"
+                  },
+                  {
+                      "path":  "public/globe.svg",
+                      "bytes":  1035,
+                      "sha256":  "b614b9bf183925957661ac851498fe1d8029fd43a62fbfed86f9e2624a57e7cf"
+                  },
+                  {
+                      "path":  "public/next.svg",
+                      "bytes":  1375,
+                      "sha256":  "55995dfad6ecb4945a1e856ddca03c5e16aa5bf13fd21b4df6a74ae79357bcfc"
+                  },
+                  {
+                      "path":  "public/vercel.svg",
+                      "bytes":  128,
+                      "sha256":  "f081337b2fee635b455b63275406a3e7f39d6a014e25ad90dab5a67e62a12ac4"
+                  },
+                  {
+                      "path":  "public/window.svg",
+                      "bytes":  385,
+                      "sha256":  "644768c4aaeb4767bce293344eeb0c125fb804a94d801440424072202d85e3a1"
+                  },
+                  {
+                      "path":  "README.md",
+                      "bytes":  5869,
+                      "sha256":  "bb5bd6db0c05433aa517b4c8e6b79b6b27443ae41c9a76722bb8667cb7cddae2"
+                  },
+                  {
+                      "path":  "scripts/health.mjs",
+                      "bytes":  814,
+                      "sha256":  "9de5e91a16d4e677c6551a0262873c7f5388c05bfa6aa2344ac769f759d9b3f7"
+                  },
+                  {
+                      "path":  "src/app/api/actions/audit/route.ts",
+                      "bytes":  314,
+                      "sha256":  "f9ed35f7a9a74f5cfc82c50cf4b3ad56aed0cf15ddadbd2cb6466c752e48eb2a"
+                  },
+                  {
+                      "path":  "src/app/api/actions/crystallize/route.ts",
+                      "bytes":  307,
+                      "sha256":  "c3016297c6c5b9aa33b252edd78d5e82feee80a2f839ce24a1fdb212f3633ade"
+                  },
+                  {
+                      "path":  "src/app/api/actions/read/route.ts",
+                      "bytes":  2424,
+                      "sha256":  "a6968bc3be1724fbab892b078bea4a55988c127c9fb05d8686282e61539755ae"
+                  },
+                  {
+                      "path":  "src/app/api/actions/scan/route.ts",
+                      "bytes":  2245,
+                      "sha256":  "4f8ddb536dc45f983344db9ba9a0025ea3f5389deb311276c71bfc79029f7163"
+                  },
+                  {
+                      "path":  "src/app/api/actions/seal/route.ts",
+                      "bytes":  285,
+                      "sha256":  "ad2ce8784f0a652ee3a34232d2f167f4a936c825c6c007c1fa24cbdc92388fcf"
+                  },
+                  {
+                      "path":  "src/app/api/chat/bridge/route.ts",
+                      "bytes":  2929,
+                      "sha256":  "00b88e2bd46428213971387753c6775d47bb734d5ed2d76494fb0734fb9a7986"
+                  },
+                  {
+                      "path":  "src/app/api/chronolith/export/route.ts",
+                      "bytes":  801,
+                      "sha256":  "f8c183e89b9b0810e044d345efe8df558913771a3d7ce3a90f2ba3a17ae04416"
+                  },
+                  {
+                      "path":  "src/app/api/chronolith/route.ts",
+                      "bytes":  741,
+                      "sha256":  "9a630a78d15a1b723c9e799f7f08f64336f07d3476733d5ee6dee8322c675120"
+                  },
+                  {
+                      "path":  "src/app/api/events/route.ts",
+                      "bytes":  417,
+                      "sha256":  "8d59e420c620a65932a9707f253c581a114c44f2e65ab89f0ee1e24577503fb1"
+                  },
+                  {
+                      "path":  "src/app/api/events/verify/route.ts",
+                      "bytes":  431,
+                      "sha256":  "86bea4a04621c7800b95e0e3786710c1f6674b4c5fd765c7a68250093ce033be"
+                  },
+                  {
+                      "path":  "src/app/api/node-assets/file/[fileName]/route.ts",
+                      "bytes":  1408,
+                      "sha256":  "532e60c25257d5d80f8007b64192a7f5f07dae782f1b8295bab8e4128e071ae9"
+                  },
+                  {
+                      "path":  "src/app/api/node-assets/route.ts",
+                      "bytes":  15656,
+                      "sha256":  "5c2fd81e79404feee10940d1ec3b928b40bb45bb79c98d0f41ad51f6472df91b"
+                  },
+                  {
+                      "path":  "src/app/api/projects/watch/route.ts",
+                      "bytes":  2426,
+                      "sha256":  "7c9cad8fad10b0683439815d1ec7ba89f61c18b191b8943e1d5e2e5f006f6a0e"
+                  },
+                  {
+                      "path":  "src/app/api/seneschal/route.ts",
+                      "bytes":  1108,
+                      "sha256":  "7e0b8604978661958c4712e9900404da095001fea2c212c9ba0733516b607e59"
+                  },
+                  {
+                      "path":  "src/app/api/state/route.ts",
+                      "bytes":  825,
+                      "sha256":  "16f124436d877ffc95726af52cee8a445564aaa46eab7a259611b92b85a92163"
+                  },
+                  {
+                      "path":  "src/app/favicon.ico",
+                      "bytes":  25931,
+                      "sha256":  "2b8ad2d33455a8f736fc3a8ebf8f0bdea8848ad4c0db48a2833bd0f9cd775932"
+                  },
+                  {
+                      "path":  "src/app/globals.css",
+                      "bytes":  6095,
+                      "sha256":  "921e29deed157513ac5b02fff1600ffe870fa5e5ea4bda443b9941bfea3945bb"
+                  },
+                  {
+                      "path":  "src/app/layout.tsx",
+                      "bytes":  1017,
+                      "sha256":  "41ef06bd895038bfa6f72fa41a3812d726fb1e8cbe90491b3e9d9adacf500f3d"
+                  },
+                  {
+                      "path":  "src/app/page.tsx",
+                      "bytes":  7032,
+                      "sha256":  "d40072bb11f396585dbea2c2996db962afe152df71db098bad70c44b29dd8395"
+                  },
+                  {
+                      "path":  "src/components/nexus/beams.tsx",
+                      "bytes":  5944,
+                      "sha256":  "fda0d06cd08cb2510d1d97de6c55abc8827e8d3cd2e96ab16d07cf305d3a2f00"
+                  },
+                  {
+                      "path":  "src/components/nexus/ChronolithTimeline.tsx",
+                      "bytes":  5450,
+                      "sha256":  "d4f3ea265c313fa0b01026e424eca9b0a9ec7d9c7aba3e09449894c98908b328"
+                  },
+                  {
+                      "path":  "src/components/nexus/documentSurface.tsx",
+                      "bytes":  11763,
+                      "sha256":  "ad63d059acd74d748fc9b1386967e1cffbb0c73b807d224d5d70d769fd662219"
+                  },
+                  {
+                      "path":  "src/components/nexus/errorBoundaries.tsx",
+                      "bytes":  2666,
+                      "sha256":  "e0041c3fa7253939349150ab02769c337b0a1c9a4a043ff3318fbc2bb0f6758c"
+                  },
+                  {
+                      "path":  "src/components/nexus/materials.ts",
+                      "bytes":  451,
+                      "sha256":  "b32f900c7208eb36bbabff6234e6da4afea946595dcaefa1fcaccf60c9262894"
+                  },
+                  {
+                      "path":  "src/components/nexus/nodeUtils.ts",
+                      "bytes":  7478,
+                      "sha256":  "dc38cacd173bd3b41f7c0588e60d33f1366ad10a74b62cce317babab34309f10"
+                  },
+                  {
+                      "path":  "src/components/nexus/sceneHelpers.tsx",
+                      "bytes":  7907,
+                      "sha256":  "cea85aa647b7f8590c962d64fae7ffbad57c9b7b8b158492293f8f42000e01b3"
+                  },
+                  {
+                      "path":  "src/components/nexus/SentinelDrone.tsx",
+                      "bytes":  10293,
+                      "sha256":  "0dfb275d8181bc2f2888a8c9d9bcc02e7ea9858604685eb68c363887926de288"
+                  },
+                  {
+                      "path":  "src/components/nexus/SystemNode.tsx",
+                      "bytes":  25270,
+                      "sha256":  "6da43fa98abca9321744a9b048602605feb39234a8fdeeb383ab536535667e63"
+                  },
+                  {
+                      "path":  "src/components/nexus/types.ts",
+                      "bytes":  2725,
+                      "sha256":  "b52a5ab5dd92ee121f1630ab34f8bf6c46ce9d571a04396a9dfbfefaccc1581b"
+                  },
+                  {
+                      "path":  "src/components/nexus/WaveMonitor.tsx",
+                      "bytes":  15154,
+                      "sha256":  "b13970da2bc99c40509514b42f8bd21350355e94867dda03f14d1612881daf50"
+                  },
+                  {
+                      "path":  "src/components/NexusCore.tsx",
+                      "bytes":  91900,
+                      "sha256":  "0331e686ffa089505682c80c9b08cc7afa08597a2c9e4e9e2c789ad403f9854e"
+                  },
+                  {
+                      "path":  "src/components/NodeAssetRig.tsx",
+                      "bytes":  7465,
+                      "sha256":  "7da75ee4e1f202b99bb6a1d32b4ba37e75fae9232ecd4a9017e2df9d3042b42a"
+                  },
+                  {
+                      "path":  "src/components/shaders/CoreShader.ts",
+                      "bytes":  3672,
+                      "sha256":  "8b3ef5571f8a8ba561e392e73eb951fe294fbcff792283770f90617ac33a7d1a"
+                  },
+                  {
+                      "path":  "src/components/SovereignHUD.tsx",
+                      "bytes":  33652,
+                      "sha256":  "e68ccc1571c955c863fad7bf914cfa5c0ac56e6212f49eb9de3edf33573f01aa"
+                  },
+                  {
+                      "path":  "src/lib/actionScripts.ts",
+                      "bytes":  1828,
+                      "sha256":  "276a93ecc36735c1239aa7b4d4ec6cd12b52d2a1058e3631323df560f8b2fb49"
+                  },
+                  {
+                      "path":  "src/lib/chronolith.ts",
+                      "bytes":  3692,
+                      "sha256":  "9581e3df48680d15693e41e3082905088646c09a4c1006a5d02c106576181289"
+                  },
+                  {
+                      "path":  "src/lib/errors.ts",
+                      "bytes":  656,
+                      "sha256":  "b362838757b711d99b00e7adbd2e0c54da2162eeea4a256dbdef1c12d618c380"
+                  },
+                  {
+                      "path":  "src/lib/eventChain.ts",
+                      "bytes":  6256,
+                      "sha256":  "07a796eb3d48c8b05ceb772e7bfc1cd1be279229013c415b29c95564809c2251"
+                  },
+                  {
+                      "path":  "src/lib/filesystemHandles.ts",
+                      "bytes":  2415,
+                      "sha256":  "3aa048a65110f6d718d2c9e3d70e09b41341252fb7ae1ece1d6b7e7786ebd180"
+                  },
+                  {
+                      "path":  "src/lib/graphData.ts",
+                      "bytes":  16358,
+                      "sha256":  "f0755b653b04162da512dcefd9a9bbcf976cdb994a128f04b8dc8d88df2b24c7"
+                  },
+                  {
+                      "path":  "src/lib/i18n.ts",
+                      "bytes":  74795,
+                      "sha256":  "c96221dba804d0faf5bd519292cca96a0fdebee1962f8c54ed38f8f7e7c8bae0"
+                  },
+                  {
+                      "path":  "src/lib/localAdapters.ts",
+                      "bytes":  6069,
+                      "sha256":  "8a3f537eff944555c928cf593a8c02be8944beea56b1f5ef6d15366382954b6e"
+                  },
+                  {
+                      "path":  "src/lib/nodeAssets.ts",
+                      "bytes":  12087,
+                      "sha256":  "3c5b8f9d7fe4d87b8080e8c7625bc259e2119f19419008d8efa75661cc21fe02"
+                  },
+                  {
+                      "path":  "src/lib/nodeGlyphTextures.ts",
+                      "bytes":  4931,
+                      "sha256":  "6a09614836f8008c9212aeb4ebe02f9a0c4a723ae3b3c5c427d5be4dab68e0bf"
+                  },
+                  {
+                      "path":  "src/lib/runtimePaths.ts",
+                      "bytes":  2756,
+                      "sha256":  "9bd61d7329dcac858a7229003115966f4af6aacbfdfe775bd93fd077f4c8fe6a"
+                  },
+                  {
+                      "path":  "src/lib/seneschal.ts",
+                      "bytes":  7549,
+                      "sha256":  "55569002403635070987fdc22f98e793d0afd2f5cd181992452bdd50815f8589"
+                  },
+                  {
+                      "path":  "src/lib/telemetry.ts",
+                      "bytes":  7972,
+                      "sha256":  "76974ef3af509669a8dc40ad3dc51846cf159bc4afcfb7c1f6d2301824c16404"
+                  },
+                  {
+                      "path":  "tsconfig.json",
+                      "bytes":  670,
+                      "sha256":  "5c51df4c59f4510d8c7dadf07a5c32132228826a3b331da5e286207b4df7ef9c"
+                  }
+              ]
+}

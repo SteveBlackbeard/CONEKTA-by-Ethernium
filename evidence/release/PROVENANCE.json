@@ -1,0 +1,26 @@
+﻿{
+    "schema":  "ethernium.personal.provenance/1",
+    "repository":  "ETHERNIUM-PERSONAL-CONEKTA",
+    "component":  "conekta",
+    "role":  "federated_control_surface",
+    "version":  "0.1.0",
+    "history_policy":  "sanitized_genesis",
+    "source":  {
+                   "repository":  "CONEKTA-by-Ethernium",
+                   "commit":  "cc3915f",
+                   "snapshot_included_uncommitted_work":  false,
+                   "originals_mutated":  false
+               },
+    "sanitation":  {
+                       "runtime_state_excluded":  true,
+                       "secrets_excluded":  true,
+                       "absolute_machine_dependencies_removed":  true,
+                       "font_forge_in_scope":  false
+                   },
+    "verification":  {
+                         "status":  "passed",
+                         "command":  "npm run health",
+                         "note":  "Lint and Next production build passed; dynamic filesystem trace warning documented."
+                     },
+    "generated_at":  "2026-07-22T01:27:33.7500389Z"
+}

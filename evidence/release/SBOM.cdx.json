@@ -1,0 +1,170 @@
+﻿{
+    "bomFormat":  "CycloneDX",
+    "specVersion":  "1.5",
+    "serialNumber":  "urn:uuid:e22bd041-4043-4fd7-8c86-787f917d09f0",
+    "version":  1,
+    "metadata":  {
+                     "timestamp":  "2026-07-22T01:27:33.7500389Z",
+                     "tools":  [
+                                   {
+                                       "vendor":  "Ethernium Personal",
+                                       "name":  "New-ReleaseEvidence.ps1",
+                                       "version":  "1"
+                                   }
+                               ],
+                     "component":  {
+                                       "type":  "application",
+                                       "name":  "ETHERNIUM-PERSONAL-CONEKTA",
+                                       "version":  "0.1.0"
+                                   }
+                 },
+    "components":  [
+                       {
+                           "type":  "library",
+                           "name":  "@react-three/drei",
+                           "version":  "^10.7.7",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/@react-three/drei"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@react-three/fiber",
+                           "version":  "^9.5.0",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/@react-three/fiber"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@react-three/postprocessing",
+                           "version":  "^3.0.4",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/@react-three/postprocessing"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@types/three",
+                           "version":  "^0.183.1",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/@types/three"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "chokidar",
+                           "version":  "^4.0.3",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/chokidar"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "framer-motion",
+                           "version":  "^12.38.0",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/framer-motion"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "lucide-react",
+                           "version":  "^1.7.0",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/lucide-react"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "next",
+                           "version":  "^16.2.9",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/next"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "postprocessing",
+                           "version":  "^6.39.0",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/postprocessing"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "react",
+                           "version":  "19.2.4",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/react"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "react-dom",
+                           "version":  "19.2.4",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/react-dom"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "three",
+                           "version":  "^0.183.2",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/three"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "three-stdlib",
+                           "version":  "2.36.1",
+                           "scope":  "required",
+                           "purl":  "pkg:npm/three-stdlib"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@tailwindcss/postcss",
+                           "version":  "^4",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/@tailwindcss/postcss"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@types/node",
+                           "version":  "^20",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/@types/node"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@types/react",
+                           "version":  "^19",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/@types/react"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "@types/react-dom",
+                           "version":  "^19",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/@types/react-dom"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "eslint",
+                           "version":  "^9",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/eslint"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "eslint-config-next",
+                           "version":  "^16.2.9",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/eslint-config-next"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "tailwindcss",
+                           "version":  "^4",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/tailwindcss"
+                       },
+                       {
+                           "type":  "library",
+                           "name":  "typescript",
+                           "version":  "^5",
+                           "scope":  "optional",
+                           "purl":  "pkg:npm/typescript"
+                       }
+                   ]
+}
