@@ -183,3 +183,21 @@ export async function getEvents(limit = 10): Promise<ChainEvent[]> {
     return [];
   }
 }
+
+/**
+ * How many events the chain actually holds.
+ *
+ * `getEvents(n).length` is a page size, never a count: with 9 events and a
+ * limit of 5 it returns 5. seneschal.ts reported that 5 as EVENTOS_RECIENTES,
+ * so a module named after an honest steward told a false number. Callers that
+ * need the quantity use this; those that need the latest few use getEvents.
+ * Counting lines avoids parsing the whole file.
+ */
+export async function getEventCount(): Promise<number> {
+  try {
+    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
+    return content.trim().split('\n').filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+}

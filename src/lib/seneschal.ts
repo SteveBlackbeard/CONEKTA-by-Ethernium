@@ -5,7 +5,7 @@
 // deterministically (L1) with zero LLM cost; everything else is forwarded to
 // the Ethernium Frugal bridge enriched with real ecosystem context.
 import { promises as fs } from 'fs';
-import { appendEvent, getEvents, verifyChain, ChainEvent } from '@/lib/eventChain';
+import { appendEvent, getEvents, getEventCount, verifyChain, ChainEvent } from '@/lib/eventChain';
 import { getAdapterConfig, getAdapterStatuses, invokeFrugalChat } from '@/lib/localAdapters';
 import { getErrorMessage } from '@/lib/errors';
 import { getRuntimeRoot, getScriptsDir, getStateFilePath } from '@/lib/runtimePaths';
@@ -52,6 +52,10 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
 
   const chain = await verifyChain();
   const latestEvents = await getEvents(5);
+  // The real total, not the page. latestEvents is capped at 5, so its length
+  // reported EVENTOS_RECIENTES: 5 when the chain held 9 — the exact telemetry
+  // lie the audit flagged, in the module named after an honest steward.
+  const eventTotal = await getEventCount();
   const frugal = getAdapterConfig('frugal');
 
   return {
@@ -61,7 +65,7 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
     eta,
     chainIntact: chain.intact,
     chainError: chain.error,
-    eventCount: latestEvents.length,
+    eventCount: eventTotal,
     latestEvents,
     runtimeRoot: getRuntimeRoot(),
     scriptsDir: getScriptsDir(),
