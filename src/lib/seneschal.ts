@@ -27,8 +27,12 @@ interface EcosystemContext {
   eta: number;
   chainIntact: boolean;
   chainError?: string;
+  /** Where verifyChain found the break, so "when did it break?" is answerable. */
+  chainBrokenAtSeq?: number;
   eventCount: number;
   latestEvents: ChainEvent[];
+  /** A wider slice than latestEvents, for temporal questions over the chain. */
+  recentWindow: ChainEvent[];
   runtimeRoot: string;
   scriptsDir: string;
   /** Which scripted actions are actually runnable; the rest would 501. */
@@ -76,7 +80,10 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
   }
 
   const chain = await verifyChain();
-  const latestEvents = await getEvents(5);
+  // One read serves both: the 5 shown in status and the wider window temporal
+  // questions need. readChainLines caches, so this is not an extra disk hit.
+  const recentWindow = await getEvents(200);
+  const latestEvents = recentWindow.slice(0, 5);
   // The real total, not the page. latestEvents is capped at 5, so its length
   // reported EVENTOS_RECIENTES: 5 when the chain held 9 — the exact telemetry
   // lie the audit flagged, in the module named after an honest steward.
@@ -92,8 +99,10 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
     eta,
     chainIntact: chain.intact,
     chainError: chain.error,
+    chainBrokenAtSeq: chain.brokenAtSeq,
     eventCount: eventTotal,
     latestEvents,
+    recentWindow,
     runtimeRoot: getRuntimeRoot(),
     scriptsDir,
     actionsAvailable,
@@ -109,6 +118,12 @@ function normalizeIntent(prompt: string) {
     // literal form works until the file is re-encoded or a tool normalizes
     // it, and then it silently stops stripping accents.
     .replace(/[\u0300-\u036f]/g, '')
+    // Strip leading punctuation before trimming. Every intent below is
+    // anchored with ^, and "\u00bfcuando se rompio la cadena?" normalizes with the
+    // opening \u00bf still attached \u2014 so natural Spanish missed EVERY local intent
+    // and fell through to the paid bridge. Found by running the matcher, not
+    // by reading it.
+    .replace(/^[\u00bf\u00a1?!\s"'`]+/, '')
     .trim();
 }
 
@@ -185,6 +200,58 @@ function resolveLocalIntent(prompt: string, context: EcosystemContext): Senescha
     };
   }
 
+  // "What happened in the last hour?" — the steward querying the chronicle.
+  // Chronolith records and Seneschal answers, but until now neither could ask
+  // the other a temporal question, so the operator had to read raw events.
+  // ultimo/ultimos too: minutes and days are masculine in Spanish, so
+  // "ultimos 30 minutos" missed a matcher that only knew ultima/ultimas.
+  const windowMatch = intent.match(/(?:ultim[oa]s?|last)\s+(\d+)?\s*(hora|horas|hour|hours|min|minuto|minutos|minute|minutes|dia|dias|day|days)/);
+  if (windowMatch || /^(que paso|que ha pasado|what happened|actividad|activity)\b/.test(intent)) {
+    const amount = Number(windowMatch?.[1] || 1);
+    const unit = windowMatch?.[2] || 'hora';
+    const msPerUnit = /min/.test(unit) ? 60_000 : /dia|day/.test(unit) ? 86_400_000 : 3_600_000;
+    const since = Date.now() - amount * msPerUnit;
+    const inWindow = context.recentWindow.filter((event) => {
+      const at = Date.parse(event.timestamp);
+      return Number.isFinite(at) && at >= since;
+    });
+    const label = `${amount} ${unit}`;
+    return {
+      reply: inWindow.length
+        ? [`ACTIVIDAD // ultimas ${label} // ${inWindow.length} de ${context.eventCount} eventos`, formatEvents(inWindow)].join('\n')
+        : `SIN_ACTIVIDAD // ninguno de los ${context.eventCount} eventos cae en las ultimas ${label}.`,
+      source: 'local',
+      intent: 'activity-window',
+      status: 'success',
+    };
+  }
+
+  // "When did the chain break?" — verifyChain already knows the sequence; it
+  // was never surfaced as an answer the operator could ask for.
+  if (/^(cuando|when)\b.*(rompio|rompe|break|broke|roto|broken)/.test(intent)
+      || /^(diagnostico|diagnose|donde fallo|where broke)\b/.test(intent)) {
+    if (context.chainIntact) {
+      return {
+        reply: `CADENA_INTACTA // ${context.eventCount} eventos verificados, sin rupturas.`,
+        source: 'local',
+        intent: 'chain-diagnosis',
+        status: 'success',
+      };
+    }
+    const at = context.chainBrokenAtSeq;
+    const culprit = at !== undefined ? context.recentWindow.find((event) => event.seq === at) : undefined;
+    return {
+      reply: [
+        `CADENA_COMPROMETIDA // ${context.chainError || 'discrepancia detectada'}`,
+        at !== undefined ? `RUPTURA_EN_SEQ: ${at}` : 'RUPTURA_EN_SEQ: no determinada',
+        culprit ? `EVENTO: [${culprit.seq}] ${culprit.type} // ${culprit.timestamp}` : '',
+      ].filter(Boolean).join('\n'),
+      source: 'local',
+      intent: 'chain-diagnosis',
+      status: 'degraded',
+    };
+  }
+
   if (/^(ayuda|help|comandos|commands)\b/.test(intent) || intent === '?') {
     return {
       reply: [
@@ -192,6 +259,8 @@ function resolveLocalIntent(prompt: string, context: EcosystemContext): Senescha
         '  status   — reporte del ecosistema (estado, cadena, drift, bridge)',
         '  verify   — verificación de integridad de la EVENT_CHAIN',
         '  eventos  — últimos eventos de la cadena',
+        '  que paso en la ultima hora — actividad en una ventana temporal',
+        '  cuando se rompio la cadena — diagnóstico con la seq exacta',
         'Cualquier otra consulta se enruta a ETHERNIUM FRUGAL con contexto del ecosistema.',
       ].join('\n'),
       source: 'local',
