@@ -30,13 +30,28 @@ export interface ChronolithTimeline {
   generated_at: string;
 }
 
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '[unserializable]';
+    }
+  }
+  return String(value);
+}
+
 function summarizePayload(payload: unknown): string {
   if (payload === null || payload === undefined) return '';
   if (typeof payload === 'string') return payload.slice(0, 120);
   if (typeof payload !== 'object') return String(payload).slice(0, 120);
   const parts = Object.entries(payload as Record<string, unknown>)
     .slice(0, 4)
-    .map(([key, value]) => `${key}=${String(value).slice(0, 48)}`);
+    // String(value) on a nested object yields "[object Object]" — a summary
+    // that tells the reader nothing. JSON-encode non-primitives instead.
+    // Latent until a payload nests, which is exactly when the summary matters.
+    .map(([key, value]) => `${key}=${formatValue(value).slice(0, 48)}`);
   return parts.join(' // ').slice(0, 160);
 }
 

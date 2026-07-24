@@ -31,7 +31,32 @@ interface EcosystemContext {
   latestEvents: ChainEvent[];
   runtimeRoot: string;
   scriptsDir: string;
+  /** Which scripted actions are actually runnable; the rest would 501. */
+  actionsAvailable: Record<string, boolean>;
   frugalConfigured: boolean;
+}
+
+// The scripts each action shells out to. scriptsDir was collected into the
+// context and never read — a dead field on a steward that could not answer
+// "will AUDIT work?". Checking existence turns it into a real answer.
+const ACTION_SCRIPTS: Record<string, string> = {
+  AUDIT: 'audit_comparison.py',
+  CRYSTALLIZE: 'crystalize.py',
+  SEAL: 'setup_guardian.py',
+};
+
+async function probeActions(scriptsDir: string): Promise<Record<string, boolean>> {
+  const entries = await Promise.all(
+    Object.entries(ACTION_SCRIPTS).map(async ([action, script]) => {
+      try {
+        await fs.access(`${scriptsDir}/${script}`);
+        return [action, true] as const;
+      } catch {
+        return [action, false] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
 }
 
 async function buildEcosystemContext(): Promise<EcosystemContext> {
@@ -56,6 +81,8 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
   // reported EVENTOS_RECIENTES: 5 when the chain held 9 — the exact telemetry
   // lie the audit flagged, in the module named after an honest steward.
   const eventTotal = await getEventCount();
+  const scriptsDir = getScriptsDir();
+  const actionsAvailable = await probeActions(scriptsDir);
   const frugal = getAdapterConfig('frugal');
 
   return {
@@ -68,7 +95,8 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
     eventCount: eventTotal,
     latestEvents,
     runtimeRoot: getRuntimeRoot(),
-    scriptsDir: getScriptsDir(),
+    scriptsDir,
+    actionsAvailable,
     frugalConfigured: Boolean(frugal.enabled && frugal.baseUrl),
   };
 }
@@ -77,7 +105,10 @@ function normalizeIntent(prompt: string) {
   return prompt
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    // Combining diacriticals by codepoint, not by literal characters. The
+    // literal form works until the file is re-encoded or a tool normalizes
+    // it, and then it silently stops stripping accents.
+    .replace(/[\u0300-\u036f]/g, '')
     .trim();
 }
 
@@ -88,6 +119,19 @@ function formatEvents(events: ChainEvent[]) {
     .join('\n');
 }
 
+function formatActions(available: Record<string, boolean>) {
+  const entries = Object.entries(available);
+  if (!entries.length) return 'sin acciones registradas';
+  const ready = entries.filter(([, ok]) => ok).map(([name]) => name);
+  const missing = entries.filter(([, ok]) => !ok).map(([name]) => name);
+  const parts = [`${ready.length}/${entries.length} disponibles`];
+  if (ready.length) parts.push(`OK: ${ready.join(', ')}`);
+  // Naming what will 501 is the point: an action that fails on click is worse
+  // than one the steward warned about up front.
+  if (missing.length) parts.push(`501: ${missing.join(', ')}`);
+  return parts.join(' // ');
+}
+
 function buildStatusReport(context: EcosystemContext) {
   const lines = [
     `ESTADO_RUNTIME: ${context.stateAvailable ? 'CRISTALIZADO' : 'STANDALONE (sin STATE.json)'}`,
@@ -96,6 +140,7 @@ function buildStatusReport(context: EcosystemContext) {
     `CADENA: ${context.chainIntact ? 'INTACTA' : `COMPROMETIDA (${context.chainError || 'sin detalle'})`}`,
     `EVENTOS_RECIENTES: ${context.eventCount}`,
     `RUNTIME_ROOT: ${context.runtimeRoot}`,
+    `ACCIONES: ${formatActions(context.actionsAvailable)}`,
     `FRUGAL_BRIDGE: ${context.frugalConfigured ? 'CONFIGURADO' : 'NO_DISPONIBLE'}`,
   ];
   return lines.join('\n');
@@ -117,7 +162,10 @@ function resolveLocalIntent(prompt: string, context: EcosystemContext): Senescha
     };
   }
 
-  if (/^(verify|verifica|verificar|check)\b/.test(intent) && /(chain|cadena|integridad)?/.test(intent)) {
+  // The second test used to be /(chain|cadena|integridad)?/ — a fully optional
+  // group matches the empty string, so it was always true and the && was dead.
+  // Dropped: the verb alone is the intent, and any qualifier is optional.
+  if (/^(verify|verifica|verificar|check)\b/.test(intent)) {
     return {
       reply: context.chainIntact
         ? `CADENA_INTACTA // verificación hash-a-hash completada sin discrepancias.`

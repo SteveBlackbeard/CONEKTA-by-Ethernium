@@ -23,6 +23,42 @@ let appendQueue: Promise<unknown> = Promise.resolve();
 let lastEventCache: ChainEvent | null = null;
 let lastEventCacheSize = -1;
 
+// Same size-guard, applied to the whole-file readers. verifyChain, getEvents
+// and getEventCount each re-read and re-split the entire chain, and with
+// polling at 7s/18s plus a Seneschal context per message that is several O(n)
+// reads per cycle over a log that only grows. The guard is the file size: if
+// it has not changed, the lines cannot have.
+let linesCache: string[] | null = null;
+let linesCacheSize = -1;
+
+async function readChainLines(): Promise<string[]> {
+  let size = -1;
+  try {
+    size = (await fs.stat(getEventChainFilePath())).size;
+  } catch {
+    linesCache = null;
+    linesCacheSize = -1;
+    return [];
+  }
+  if (linesCache && size === linesCacheSize) return linesCache;
+  try {
+    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
+    linesCache = content.trim().split('\n').filter(Boolean);
+    linesCacheSize = size;
+    return linesCache;
+  } catch {
+    linesCache = null;
+    linesCacheSize = -1;
+    return [];
+  }
+}
+
+/** Drop the cache after a write, so the next read sees the new tail. */
+function invalidateLinesCache(): void {
+  linesCache = null;
+  linesCacheSize = -1;
+}
+
 function computeHash(data: string): string {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
@@ -122,6 +158,8 @@ async function appendEventUnsafe(type: string, payload: unknown): Promise<ChainE
   await fs.appendFile(getEventChainFilePath(), JSON.stringify(newEvent) + '\n', 'utf-8');
   lastEventCache = newEvent;
   lastEventCacheSize = await currentChainSize();
+  // The file just grew: the readers' cached lines are now one event short.
+  invalidateLinesCache();
   return newEvent;
 }
 
@@ -140,8 +178,7 @@ export interface ChainVerification {
 
 export async function verifyChain(): Promise<ChainVerification> {
   try {
-    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
+    const lines = await readChainLines();
 
     let expectedParentHash = '0'.repeat(64);
     let expectedInputHash = '0'.repeat(64);
@@ -175,8 +212,7 @@ export async function verifyChain(): Promise<ChainVerification> {
 
 export async function getEvents(limit = 10): Promise<ChainEvent[]> {
   try {
-    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
-    const lines = content.trim().split('\n').filter(Boolean);
+    const lines = await readChainLines();
     // Only parse the tail we actually return.
     return lines.slice(-limit).map((line) => JSON.parse(line)).reverse();
   } catch {
@@ -195,8 +231,7 @@ export async function getEvents(limit = 10): Promise<ChainEvent[]> {
  */
 export async function getEventCount(): Promise<number> {
   try {
-    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
-    return content.trim().split('\n').filter(Boolean).length;
+    return (await readChainLines()).length;
   } catch {
     return 0;
   }
