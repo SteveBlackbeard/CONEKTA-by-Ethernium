@@ -67,7 +67,10 @@ export interface DashboardSignals {
 
 interface DashboardSignalInput {
   state?: Partial<StateSnapshot> | null;
+  /** A page of the most recent events. Its length is a page size, not a count. */
   chainEvents?: ChainEventSnapshot[];
+  /** How many events the chain actually holds. Use this for any magnitude. */
+  chainEventTotal?: number;
   chainStatus?: ChainStatusSnapshot | null;
   activeAction?: string | null;
   linkedProject?: string | null;
@@ -205,8 +208,16 @@ export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSi
     : 0.72;
   const chainTrust = clamp(chainTrustBase - drift * 0.08);
   const syncLevel = clamp((eta * 0.68) + ((1 - drift) * 0.24) + (chainTrust * 0.08)) * 100;
+  // Use the real total, not the page. chainEvents is capped by the API's
+  // limit, so with 9 events and with 900 this term looked identical — a
+  // magnitude computed from a page size cannot distinguish a quiet system
+  // from a saturated one.
+  const chainEventTotal = Math.max(
+    chainEvents.length,
+    Number(input.chainEventTotal ?? chainEvents.length),
+  );
   const activity = clamp(
-    chainEvents.length / 8
+    chainEventTotal / 8
     + liveLogs.length / 8
     + (input.activeAction ? 0.28 : 0)
     + Math.min(0.18, linkedProjectCount * 0.05),

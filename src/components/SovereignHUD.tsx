@@ -25,6 +25,7 @@ interface HUDProps {
   setLanguage: (lang: Language) => void;
   externalState?: StateSnapshot | null;
   chainEvents: ChainEventSnapshot[];
+  chainEventTotal?: number;
   chainStatus: ChainStatusSnapshot | null;
   setChainStatus: React.Dispatch<React.SetStateAction<ChainStatusSnapshot | null>>;
   activeCommand: string | null;
@@ -59,6 +60,7 @@ const SovereignHUD = ({
   setLanguage,
   externalState,
   chainEvents,
+  chainEventTotal,
   chainStatus,
   setChainStatus,
   activeCommand,
@@ -305,11 +307,12 @@ const SovereignHUD = ({
   const signals = useMemo(() => deriveDashboardSignals({
     state,
     chainEvents,
+    chainEventTotal,
     chainStatus,
     activeAction: activeCommand,
     linkedProject: primaryLinkedSystem?.name || null,
     linkedProjectCount: linkedSystems.length,
-  }), [activeCommand, chainEvents, chainStatus, linkedSystems.length, primaryLinkedSystem?.name, state]);
+  }), [activeCommand, chainEvents, chainEventTotal, chainStatus, linkedSystems.length, primaryLinkedSystem?.name, state]);
   const modeLabelText = translateModeLabel(signals.modeLabel, t);
   const modeReasonText = translateReason(signals.modeReason, t);
   const activeCommandText = translateActiveCommand(activeCommand, t);

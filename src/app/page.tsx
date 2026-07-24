@@ -102,6 +102,8 @@ export default function Home() {
   const [language, setLanguage] = useState<Language>('EN');
   const [systemState, setSystemState] = useState<StateSnapshot | null>(null);
   const [chainEvents, setChainEvents] = useState<ChainEventSnapshot[]>([]);
+  // The page above is capped by the API's limit. This is how many exist.
+  const [chainEventTotal, setChainEventTotal] = useState(0);
   const [chainStatus, setChainStatus] = useState<ChainStatusSnapshot | null>(null);
   const [activeCommand, setActiveCommand] = useState<string | null>(null);
   const [stateLatencyMs, setStateLatencyMs] = useState<number | null>(null);
@@ -128,8 +130,10 @@ export default function Home() {
       .then(r => r.json())
       .then((payload) => {
         const nextEvents = payload.events || [];
+        const nextTotal = Number(payload.total ?? nextEvents.length);
         startTransition(() => {
           setChainEvents((previous) => sameChainEvents(previous, nextEvents) ? previous : nextEvents);
+          setChainEventTotal((previous) => previous === nextTotal ? previous : nextTotal);
         });
         return true;
       })
@@ -185,6 +189,7 @@ export default function Home() {
         setLanguage={setLanguage}
         externalState={systemState}
         chainEvents={chainEvents}
+        chainEventTotal={chainEventTotal}
         chainStatus={chainStatus}
         setChainStatus={setChainStatus}
         activeCommand={activeCommand}
