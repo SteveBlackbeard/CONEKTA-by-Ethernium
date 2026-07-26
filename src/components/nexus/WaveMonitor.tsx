@@ -49,9 +49,8 @@ export function WaveMonitor({
   const canvasRef = useRef<HTMLCanvasElement>(null!);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [viewportWidth, setViewportWidth] = useState(1440);
-  const normalizedDrift = Math.max(0, Math.min(1, drift));
   const normalizedEta = Math.max(0, Math.min(1, eta));
-  const quadrantSync = Math.max(0, Math.min(100, ((normalizedEta * 0.72) + ((1 - normalizedDrift) * 0.28)) * 100));
+  const quadrantSync = Math.max(0, Math.min(100, normalizedEta * 100));
   const latencyLabel = stateLatencyMs === null ? '--' : `${stateLatencyMs}ms`;
   const palette = signals.palette;
   const latestChainEvent = chainEvents[0];
@@ -259,10 +258,10 @@ export function WaveMonitor({
             ))}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginTop: '10px' }}>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>H</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.H.toFixed(4)}</div></div>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>ETA</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.eta.toFixed(3)}</div></div>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>N</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.N}</div></div>
-            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>D_KL</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{drift.toFixed(4)}</div></div>
+            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>REQUESTS</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.N}</div></div>
+            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>BYPASS</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{(physics.eta * 100).toFixed(1)}%</div></div>
+            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>L3/L4</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.H}</div></div>
+            <div><div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '2px' }}>P95</div><div style={{ ...glowText, fontSize: '0.68rem', fontWeight: 700 }}>{physics.W ? `${physics.W}ms` : '--'}</div></div>
           </div>
         </div>
 
@@ -293,4 +292,3 @@ export function WaveMonitor({
     </div>
   );
 }
-

@@ -22,6 +22,10 @@ function sameStateSnapshot(left: StateSnapshot | null, right: StateSnapshot | nu
   if (!left || !right) return false;
   return left.merkle_root === right.merkle_root
     && left.drift_kl === right.drift_kl
+    && left.available === right.available
+    && left.error === right.error
+    && JSON.stringify(left.routing) === JSON.stringify(right.routing)
+    && JSON.stringify(left.latency_ms) === JSON.stringify(right.latency_ms)
     && left.crystallizer_version === right.crystallizer_version
     && samePhysics(left.physics, right.physics);
 }
@@ -172,8 +176,9 @@ export default function Home() {
         chainEvents={chainEvents}
         chainStatus={chainStatus}
         activeCommand={activeCommand}
-        stateLatencyMs={stateLatencyMs}
-      />
+         stateLatencyMs={stateLatencyMs}
+         runtimeAvailable={systemState?.available === true}
+       />
 
       {/* Primary UI Layer */}
       <SovereignHUD 

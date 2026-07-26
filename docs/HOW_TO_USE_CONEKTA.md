@@ -1,37 +1,33 @@
-# How To Use Continuity Conekta
+# How to use CONEKTA
 
-Continuity Conekta is the standalone visual command surface for Continuity Legacy. It is not the Python runtime and it is not bundled back into the Legacy package.
+## Start
 
-## Local Development
+1. Start ETHERNIUM FRUGAL with `npm run api`.
+2. In this repository run `npm install` and `npm run dev`.
+3. Open `http://127.0.0.1:3000`.
 
-```bash
-npm install
-npm run dev
-```
+The sibling layout `FRUGAL/` and `CONEKTA/` is portable: Conekta discovers the
+ignored FRUGAL API token at runtime. Use `.env.local` only to override that
+layout.
 
-Open `http://localhost:3000`.
+## What the controls do
 
-## Health Gate
+- **ACCESS / LINK PROJECT** asks the browser for a directory and adds a
+  read-only visualization of its top-level structure.
+- **SENESCHAL CHAT** resolves basic status commands locally, then sends other
+  prompts through SENESCHAL's real FRUGAL-governed preflight before FRUGAL chat.
+- **CHRONOLITH** shows two separate facts: the local Conekta event ledger and
+  the real read-only CHRONOLITH verdict returned through FRUGAL.
+- **NODE ASSETS** change presentation only.
 
-Before pushing or publishing the repo:
+Legacy CRYSTALLIZE, AUDIT and SEAL buttons were removed because no promoted
+FRUGAL contract backed them.
+
+## Verify
 
 ```bash
 npm run health
 ```
 
-The health gate checks required files, lint, and production build.
-
-## Runtime Boundary
-
-Conekta reads local Continuity Legacy artifacts such as `STATE.json`, event-chain data, linked-system structure, and optional local adapter responses. If a runtime artifact is missing, Conekta should show an explicit degraded state rather than pretending the action succeeded.
-
-The adapter rules are defined in `ADAPTER_CONTRACT.md`.
-
-## Operational Buttons
-
-- `SYNTH_DNA`: intended crystallization action through an explicit local adapter.
-- `AUDIT_PHYSICS`: intended audit action through an explicit local adapter.
-- `SEAL_VAULT`: intended guardian/seal action through an explicit local adapter.
-- `ACCESS`: links local systems for visualization and read-only inspection when the browser/runtime can access them.
-
-Only claim a button as fully operational when the corresponding adapter exists and has been verified against the current Continuity Legacy runtime.
+Do not claim an ecosystem peer as online merely because its node renders. Use
+the live API status and the physical integration evidence.

@@ -56,6 +56,7 @@ const NexusCore = ({
   chainStatus,
   activeCommand,
   stateLatencyMs = null,
+  runtimeAvailable = false,
 }: NexusCoreProps) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -108,7 +109,7 @@ const NexusCore = ({
   
   // Authority: Use props from page.tsx
   const physics = useMemo(
-    () => externalPhysics || { H: 0, H_max: 0, eta: 1.0, N: 0, W: 0, gini: 0 },
+    () => externalPhysics || { H: 0, H_max: 0, eta: 0, N: 0, W: 0, gini: 0 },
     [externalPhysics],
   );
   const drift = typeof externalDrift === 'number' ? externalDrift : 0;
@@ -124,6 +125,7 @@ const NexusCore = ({
       merkle_root: merkle,
       drift_kl: drift,
       physics,
+      available: runtimeAvailable,
     },
     chainEvents,
     chainStatus,
@@ -131,24 +133,21 @@ const NexusCore = ({
     linkedProject: primaryLinkedSystem?.name || null,
     linkedProjectCount: linkedSystems.length,
     liveLogs: logs,
-  }), [activeCommand, chainEvents, chainStatus, drift, linkedSystems.length, logs, merkle, physics, primaryLinkedSystem?.name]);
+  }), [activeCommand, chainEvents, chainStatus, drift, linkedSystems.length, logs, merkle, physics, primaryLinkedSystem?.name, runtimeAvailable]);
   const normalizedEta = Math.max(0, Math.min(1, physics.eta || 0));
-  const normalizedDrift = Math.max(0, Math.min(1, drift));
   const modeLabelText = translateModeLabel(signals.modeLabel, t);
   const modeReasonText = translateReason(signals.modeReason, t);
   const activeVectorText = translateActiveCommand(activeCommand, t);
-  const healthLabel = normalizedEta >= 0.75
-    ? t['hud.health.healthy']
-    : normalizedEta >= 0.50
-    ? t['hud.health.moderate']
-    : t['hud.health.severe'];
-  const healthColor = normalizedEta >= 0.75
+  const healthLabel = runtimeAvailable ? 'FRUGAL ONLINE' : 'FRUGAL UNAVAILABLE';
+  const healthColor = runtimeAvailable && normalizedEta >= 0.75
     ? signals.palette.emphasis
-    : normalizedEta >= 0.50
+    : runtimeAvailable && normalizedEta >= 0.50
     ? signals.palette.secondary
     : signals.palette.warning;
-  const syncLevel = Math.max(0, Math.min(100, (1 - normalizedDrift) * 100));
-  const fluxColor = drift > 0.1
+  const syncLevel = runtimeAvailable ? normalizedEta * 100 : 0;
+  const fluxColor = !runtimeAvailable
+    ? signals.palette.warning
+    : drift > 0.1
     ? signals.palette.accent
     : drift > 0.03
     ? signals.palette.secondary
@@ -294,10 +293,7 @@ const NexusCore = ({
     }
 
     if (activeCommand && previousCommandRef.current !== activeCommand) {
-      if (activeCommand.includes('AUDIT')) playCue([600, 820], 0.1, 'triangle', 0.014);
-      else if (activeCommand.includes('SEAL')) playCue([340, 510, 680], 0.13, 'sine', 0.016);
-      else if (activeCommand.includes('CRYSTALLIZE')) playCue([480, 620, 760], 0.1, 'triangle', 0.015);
-      else playCue([420, 540], 0.08, 'triangle', 0.012);
+      playCue([420, 540], 0.08, 'triangle', 0.012);
     }
 
     if (chainStatus && previousChainIntactRef.current !== chainStatus.intact) {
@@ -1203,7 +1199,7 @@ const NexusCore = ({
         camera={{ position: [0, 35, 0.001], zoom: 30, near: 0.1, far: 200 }}
       >
         <CanvasBackgroundSync background={signals.palette.sceneBg} fog={signals.palette.fog} />
-        <DotsBackdrop color="rgba(255,255,255,0.7)" />
+        <DotsBackdrop color="#b3b3b3" />
         <SceneRig signals={signals} reducedMotion={reducedMotion} cameraMode={cameraMode} focusedNode={selectedNode} controlsRef={controlsRef} sceneBounds={sceneBounds} />
         <ZoomTierTracker onZoomTierChange={setZoomTier} onZoomChange={setCameraZoom} />
         <ambientLight intensity={0.7} color="#f8fafc" />
@@ -1589,11 +1585,11 @@ const NexusCore = ({
 
       <div style={{ position: 'absolute', top: 30, left: '50%', transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', zIndex: 180 }}>
         <h1 className="text-gradient" style={{ fontSize: isPhone ? '1rem' : isTablet ? '1.15rem' : '1.4rem', margin: 0, letterSpacing: isPhone ? '6px' : isTablet ? '9px' : '12px', fontWeight: 800, fontFamily: 'var(--font-sans)' }}>
-          INVICTVS PROTOCOL
+          CONEKTA NEXUS
         </h1>
 
         <div style={{ color: '#ffffff', fontSize: isPhone ? '0.42rem' : '0.6rem', letterSpacing: isPhone ? '2px' : '6px', marginTop: '4px', fontWeight: 600, opacity: 0.74, textShadow: '0 0 14px rgba(255,255,255,0.18)', maxWidth: isPhone ? '180px' : 'none' }}>
-          {tt(t, 'core.phase.subtitle', 'PHASE 25: SOVEREIGN BEVEL & LIQUID MASTERY')}
+          ETHERNIUM PERSONAL // FRUGAL AUTHORITY
         </div>
 
         <div style={{ width: titleTelemetryWidth, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: isPhone ? '6px' : '8px', marginTop: isPhone ? '2px' : '5px' }}>
@@ -1604,10 +1600,10 @@ const NexusCore = ({
           </div>
 
           <div style={{ width: '100%', padding: isPhone ? '8px 10px' : '10px 12px', border: `1px solid ${fluxBorder}`, background: fluxBackground, backdropFilter: 'none', boxShadow: '0 14px 44px rgba(0,0,0,0.18)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-            <div style={{ ...overlaySoftText, fontSize: isPhone ? '0.5rem' : '0.56rem', letterSpacing: isPhone ? '2px' : '4px' }}>{tt(t, 'core.stability_flux', 'STABILITY_FLUX')}</div>
-            <div style={{ color: fluxColor, fontSize: isPhone ? '0.6rem' : '0.68rem', letterSpacing: isPhone ? '2px' : '3px', fontWeight: 800 }}>{tt(t, 'core.sync_level', 'SYNC_LEVEL')}</div>
+            <div style={{ ...overlaySoftText, fontSize: isPhone ? '0.5rem' : '0.56rem', letterSpacing: isPhone ? '2px' : '4px' }}>MEASURED ROUTING</div>
+            <div style={{ color: fluxColor, fontSize: isPhone ? '0.6rem' : '0.68rem', letterSpacing: isPhone ? '2px' : '3px', fontWeight: 800 }}>L1/L2 BYPASS</div>
             <div style={{ ...overlayGlowText, fontSize: isPhone ? '1rem' : '1.18rem', fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{syncLevel.toFixed(1)}%</div>
-            <div style={{ color: fluxColor, fontSize: isPhone ? '0.48rem' : '0.54rem', letterSpacing: '2px', fontWeight: 700 }}>{tt(t, 'core.live_drift', 'LIVE_DRIFT')} {drift.toFixed(4)}</div>
+            <div style={{ color: fluxColor, fontSize: isPhone ? '0.48rem' : '0.54rem', letterSpacing: '2px', fontWeight: 700 }}>{runtimeAvailable ? 'FRUGAL TELEMETRY' : 'NO TELEMETRY'}</div>
             <div style={{ ...overlaySoftText, fontSize: '0.42rem', letterSpacing: '2px' }}>{modeReasonText}</div>
           </div>
         </div>
@@ -1997,9 +1993,7 @@ interface NexusCoreProps {
   chainStatus: ChainStatusSnapshot | null;
   activeCommand: string | null;
   stateLatencyMs?: number | null;
+  runtimeAvailable?: boolean;
 }
 
 export default NexusCore;
-
-
-

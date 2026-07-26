@@ -1,10 +1,7 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  // The read API accepts operator-linked paths at runtime. Those paths are
-  // data, not build dependencies; tracing the workspace parent makes a
-  // multi-repository checkout look like one deployable application.
-  outputFileTracingRoot: process.cwd(),
-};
+// Linked project paths are runtime data, not build dependencies. Next's
+// default tracing root is therefore the correct portable release boundary.
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

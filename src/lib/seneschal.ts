@@ -6,7 +6,7 @@
 // the Ethernium Frugal bridge enriched with real ecosystem context.
 import { promises as fs } from 'fs';
 import { appendEvent, getEvents, verifyChain, ChainEvent } from '@/lib/eventChain';
-import { getAdapterConfig, getAdapterStatuses, invokeFrugalChat } from '@/lib/localAdapters';
+import { getAdapterConfig, getAdapterStatuses, invokeFrugalChat, invokeFrugalResult } from '@/lib/localAdapters';
 import { getErrorMessage } from '@/lib/errors';
 import { getRuntimeRoot, getScriptsDir, getStateFilePath } from '@/lib/runtimePaths';
 
@@ -52,7 +52,7 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
 
   const chain = await verifyChain();
   const latestEvents = await getEvents(5);
-  const frugal = getAdapterConfig('frugal');
+  const frugal = getAdapterConfig();
 
   return {
     stateAvailable,
@@ -156,7 +156,7 @@ function buildFrugalEnvelope(prompt: string, context: EcosystemContext) {
     '[SENESCHAL_CONTEXT]',
     buildStatusReport(context),
     '[/SENESCHAL_CONTEXT]',
-    'Eres SENESCHAL, mayordomo operador del ecosistema CONEKTA/Continuity. Responde de forma operativa y concisa usando el contexto anterior cuando sea relevante.',
+    'Eres ETHERNIUM FRUGAL atendiendo la superficie CONEKTA. SENESCHAL sólo ha realizado el preflight consultivo. Responde de forma operativa y concisa usando el contexto anterior cuando sea relevante.',
     `Consulta del operador: ${prompt}`,
   ].join('\n');
 }
@@ -182,6 +182,20 @@ export async function askSeneschal(prompt: string): Promise<SeneschalReply> {
 
   let result;
   try {
+    const preflight = await invokeFrugalResult<{
+      proceed?: boolean;
+      verdict?: string;
+      findings?: unknown[];
+    }>('/ecosystem/seneschal/preflight', { text: prompt });
+    if (!preflight.ok || preflight.payload.proceed !== true) {
+      return {
+        reply: `SENESCHAL_BLOCKED // ${preflight.payload.verdict || preflight.payload.error || `HTTP_${preflight.status}`}`,
+        source: 'frugal',
+        intent: 'seneschal-preflight',
+        status: 'degraded',
+        raw: preflight.payload,
+      };
+    }
     result = await invokeFrugalChat(buildFrugalEnvelope(prompt, context));
   } catch (error: unknown) {
     // The bridge is configured but unreachable (service down, timeout). Stay
@@ -231,5 +245,6 @@ export async function getSeneschalStatus() {
       frugalConfigured: context.frugalConfigured,
     },
     adapters: getAdapterStatuses(),
+    authority: 'ethernium-frugal',
   };
 }

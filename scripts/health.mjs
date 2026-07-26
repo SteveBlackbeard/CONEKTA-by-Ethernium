@@ -8,6 +8,8 @@ const requiredPaths = [
   'eslint.config.mjs',
   'src/app/page.tsx',
   'src/lib/localAdapters.ts',
+  'src/proxy.ts',
+  'test/frugal-boundary.test.mjs',
   'docs/ADAPTER_CONTRACT.md',
 ];
 
@@ -28,7 +30,6 @@ for (const relativePath of requiredPaths) {
   }
 }
 
-run('npm', ['run', 'lint']);
-run('npm', ['run', 'build']);
+run('npm', ['test']);
 
-console.log('Continuity Conekta health check passed.');
+console.log('Ethernium Personal Conekta health check passed.');

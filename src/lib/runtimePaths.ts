@@ -1,4 +1,4 @@
-// Central resolution of the Continuity runtime root.
+// Central resolution of Conekta-owned runtime data.
 //
 // CONEKTA was extracted from the old monorepo, where runtime artifacts
 // (STATE.json, EVENT_CHAIN.jsonl, .github/scripts/*.py) lived one level above
@@ -6,7 +6,8 @@
 // resolves through this module instead of `process.cwd()/..`.
 //
 // The runtime root defaults to `<repo>/runtime` and can be pointed at a real
-// Continuity Legacy checkout via the CONEKTA_RUNTIME_ROOT env var.
+// An operator may relocate it via CONEKTA_RUNTIME_ROOT; doing so never promotes
+// that directory to cognitive authority.
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 

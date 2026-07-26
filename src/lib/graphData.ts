@@ -173,13 +173,7 @@ function buildEntryNode(
   };
 }
 
-const enginePositions = fanPositions([0, 0, 0], 3, 8.8, 1.75, Math.PI / 6);
-const editionPositions = fanPositions([0, 0, 0], 3, 13.4, -0.82, Math.PI / 2);
-const linkProjectPosition: [number, number, number] = [
-  editionPositions[1][0] - 10.6,
-  editionPositions[1][1],
-  editionPositions[1][2],
-];
+const linkProjectPosition: [number, number, number] = [-18, -0.8, 0];
 
 function getLinkedSystemPosition(index: number, totalSystems: number): [number, number, number] {
   if (totalSystems <= 1) return linkProjectPosition;
@@ -197,191 +191,110 @@ function getLinkedSystemPosition(index: number, totalSystems: number): [number, 
   return satellites[Math.min(index - 1, satellites.length - 1)];
 }
 
-const coreScripts = [
-  'crystalize.py',
-  'audit_comparison.py',
-  'setup_guardian.py',
-  'sync_master.py',
-  'fidelity_sync.py',
-  'systemic_enrichment.py',
-];
-
-const rootDocs = [
-  'README.md',
-  'STATE.json',
-  'docs/HOW_TO_USE_CONEKTA.md',
-  'RELEASE_NOTES_MANIFEST.md',
-  'HOW_TO_USE_IT.md',
-  'CASE_STUDY_DRIFT.md',
-  'BENCHMARKS.md',
-  'PROJECT_CONTEXT.md',
-];
-
-const liteFiles = ['run_continuity_lite.py', 'STATE.json', 'PROJECT_CONTEXT.md', 'pyproject.toml'];
-const proFiles = ['run_continuity_pro.py', 'STATE.json', 'PROJECT_CONTEXT.md', 'SECURITY.md', 'pyproject.toml'];
-const omegaFiles = ['run_continuity_omega.py', 'PROJECT_CONTEXT.md', 'pyproject.toml'];
-
 export function buildStaticGraph(lang: Language, linkedSystemCount = 0): { nodes: GraphNode[]; edges: GraphEdge[] } {
   const t = translations[lang];
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
-
-  nodes.push({
+  const nodes: GraphNode[] = [{
     id: 'core',
-    label: 'CONTINUITY LEGACY',
+    label: 'ETHERNIUM FRUGAL',
     position: [0, 0, 0],
     type: 'core',
     shape: 'octahedron',
     size: 1.95,
     parentId: null,
-    tooltip: t['graph.core.tooltip'] || 'Central governance engine of the Ethernium ecosystem.',
+    tooltip: 'Sole cognitive runtime and authority of Ethernium Personal.',
     color: '#ffffff',
     orbitLevel: 0,
     importance: 'primary',
     systemId: null,
     motionProfile: 'sentinel-linked',
-  });
+  }];
+  const edges: GraphEdge[] = [];
 
-  if (linkedSystemCount > 0) {
-    nodes.push({
-      id: 'imperium',
-      label: 'IMPERIUM',
-      position: [0, 0, 0],
-      type: 'edition',
-      shape: 'octahedron',
-      size: 2.6,
-      parentId: null,
-      tooltip: t['graph.imperium.tooltip'] || 'Sovereign control node for linked systems.',
-      color: '#f8fafc',
-      orbitLevel: 0,
-      importance: 'primary',
-      systemId: null,
-      motionProfile: 'sentinel-linked',
-    });
-  }
-
-  const engines = [
-    { id: 'crystallizer', label: 'CRYSTALLIZER', action: '/api/actions/crystallize', tooltip: t['graph.cryst.tooltip'] },
-    { id: 'auditor', label: 'AUDITOR', action: '/api/actions/audit', tooltip: t['graph.audit.tooltip'] },
-    { id: 'guardian', label: 'GUARDIAN', action: '/api/actions/seal', tooltip: t['graph.guard.tooltip'] },
+  const positions = fanPositions([0, 0, 0], 5, 9.8, 0.4, Math.PI / 8);
+  const components: Array<{
+    id: string;
+    label: string;
+    tooltip: string;
+    color: string;
+    type: GraphNode['type'];
+  }> = [
+    {
+      id: 'seneschal',
+      label: 'SENESCHAL',
+      tooltip: 'Real consultative MCP preflight. It cannot mutate or become cognitive authority.',
+      color: '#a78bfa',
+      type: 'engine',
+    },
+    {
+      id: 'chronolith',
+      label: 'CHRONOLITH',
+      tooltip: 'Read-only release and integrity evidence verifier.',
+      color: '#f59e0b',
+      type: 'engine',
+    },
+    {
+      id: 'thestral',
+      label: 'THESTRAL',
+      tooltip: 'Same-origin browser gateway and visual runtime selector.',
+      color: '#38bdf8',
+      type: 'module',
+    },
+    {
+      id: 'invictvs',
+      label: 'INVICTVS',
+      tooltip: 'Visual-only WebGL mask. Every cognitive request delegates to FRUGAL.',
+      color: '#22d3ee',
+      type: 'module',
+    },
+    {
+      id: 'conekta',
+      label: 'CONEKTA',
+      tooltip: 'This federated read/request surface; it does not own cognition.',
+      color: '#4ade80',
+      type: 'module',
+    },
   ];
 
-  engines.forEach((eng, i) => {
+  components.forEach((component, index) => {
     nodes.push({
-      id: eng.id,
-      label: eng.label,
-      position: enginePositions[i],
-      type: 'engine',
-      shape: 'tetrahedron',
+      id: component.id,
+      label: component.label,
+      position: positions[index],
+      type: component.type,
+      shape: component.type === 'engine' ? 'tetrahedron' : 'sphere',
       size: 1.05,
       parentId: 'core',
-      action: eng.action,
-      tooltip: eng.tooltip,
-      color: '#22d3ee',
+      tooltip: component.tooltip,
+      color: component.color,
       orbitLevel: 1,
       importance: 'secondary',
       systemId: null,
       motionProfile: 'living',
     });
-    edges.push({ from: 'core', to: eng.id });
+    edges.push({ from: 'core', to: component.id });
   });
 
-  const scriptPositions = fanPositions(enginePositions[0], coreScripts.length, 5.15, 0.72, Math.PI / 7);
-  coreScripts.forEach((script, i) => {
-    const id = `script-${script}`;
-    nodes.push({
-      id,
-      label: script,
-      position: scriptPositions[i],
-      type: 'file',
-      shape: 'document',
-      size: 0.4,
-      parentId: 'crystallizer',
-      tooltip: `Core engine script: ${script}`,
-      color: '#67e8f9',
-      filePath: `.github/scripts/${script}`,
-      orbitLevel: 2,
-      importance: 'tertiary',
-      systemId: null,
-      motionProfile: 'static',
-    });
-    edges.push({ from: 'crystallizer', to: id });
+  const aetherPosition = fanPositions(positions[2], 1, 4.2, -0.7, Math.PI / 3)[0];
+  nodes.push({
+    id: 'aether-lite',
+    label: 'AETHER LITE',
+    position: aetherPosition,
+    type: 'module',
+    shape: 'sphere',
+    size: 0.62,
+    parentId: 'thestral',
+    tooltip: '80-particle Canvas 2D fallback; presentation only, never a cognitive runtime.',
+    color: '#94a3b8',
+    orbitLevel: 2,
+    importance: 'tertiary',
+    systemId: null,
+    motionProfile: 'living',
   });
-
-  const docPositions = fanPositions([0, 0, 0], rootDocs.length, 8.5, -5.6, Math.PI / 9);
-  rootDocs.forEach((doc, i) => {
-    const id = `root-${doc}`;
-    nodes.push({
-      id,
-      label: doc,
-      position: docPositions[i],
-      type: 'file',
-      shape: 'document',
-      size: doc === 'README.md' || doc === 'STATE.json' ? 0.48 : 0.34,
-      parentId: 'core',
-      tooltip: `Root document: ${doc}`,
-      color: '#d4d4d8',
-      filePath: doc,
-      cluster: 'documents',
-      orbitLevel: 2,
-      importance: 'tertiary',
-      systemId: null,
-      motionProfile: 'static',
-    });
-    edges.push({ from: 'core', to: id });
-  });
-
-  const editionColors: Record<string, string> = { lite: '#4ade80', pro: '#fb923c', omega: '#a78bfa' };
-  const editions = [
-    { id: 'lite', label: 'LITE', files: liteFiles, dir: 'continuity-lite', tooltip: t['graph.lite.tooltip'] },
-    { id: 'pro', label: 'PRO', files: proFiles, dir: 'continuity-pro', tooltip: t['graph.pro.tooltip'] },
-    { id: 'omega', label: 'OMEGA', files: omegaFiles, dir: 'continuity-omega', tooltip: t['graph.omega.tooltip'] },
-  ];
-
-  editions.forEach((ed, i) => {
-    const edColor = editionColors[ed.id];
-    nodes.push({
-      id: ed.id,
-      label: ed.label,
-      position: editionPositions[i],
-      type: 'edition',
-      shape: 'sphere',
-      size: 1.18,
-      parentId: 'core',
-      tooltip: ed.tooltip,
-      color: edColor,
-      orbitLevel: 1,
-      importance: 'secondary',
-      systemId: null,
-      motionProfile: 'living',
-    });
-    edges.push({ from: 'core', to: ed.id });
-
-    const subPositions = fanPositions(editionPositions[i], ed.files.length, 4.35, -0.72, Math.PI / 7);
-    ed.files.forEach((file, j) => {
-      const fileId = `${ed.id}-${file}`;
-      nodes.push({
-        id: fileId,
-        label: file,
-        position: subPositions[j],
-        type: 'file',
-        shape: 'document',
-        size: 0.34,
-        parentId: ed.id,
-        tooltip: `${ed.label} module file: ${file}`,
-        color: edColor,
-        filePath: `${ed.dir}/${file}`,
-        orbitLevel: 2,
-        importance: 'tertiary',
-        systemId: null,
-        motionProfile: 'static',
-      });
-      edges.push({ from: ed.id, to: fileId });
-    });
-  });
+  edges.push({ from: 'thestral', to: 'aether-lite' });
+  edges.push({ from: 'thestral', to: 'invictvs' });
 
   nodes.push({
-    id: 'link-placeholder',
+    id: 'link-project-control',
     label: t['graph.link.label'] || 'LINK PROJECT',
     position: getLinkedSystemPosition(linkedSystemCount, linkedSystemCount + 1),
     type: 'link-placeholder',

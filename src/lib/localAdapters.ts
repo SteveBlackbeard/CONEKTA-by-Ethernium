@@ -1,25 +1,36 @@
-type AdapterProvider = 'ollama' | 'openclaw' | 'moltbot' | 'frugal';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 type AdapterConfig = {
   enabled: boolean;
-  baseUrl: string | null;
-  model?: string | null;
-  apiKey?: string | null;
+  baseUrl: string;
   timeoutMs: number;
 };
 
 export type AdapterStatus = {
-  provider: AdapterProvider;
+  provider: 'frugal';
+  authority: 'ethernium-frugal';
   enabled: boolean;
   configured: boolean;
-  baseUrl: string | null;
-  model?: string | null;
-  hasApiKey: boolean;
+  baseUrl: string;
+  credentialSource: 'environment' | 'token-file' | 'missing';
 };
 
-export type OllamaChatMessage = {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export type FrugalChatResult = {
+  status?: 'success' | 'degraded' | 'blocked';
+  mode?: string;
+  response?: string;
+  result_class?: string;
+  acted_on?: unknown[];
+  next?: string;
+};
+
+type FrugalJson = Record<string, unknown>;
+
+export type FrugalHttpResult<T extends FrugalJson = FrugalJson> = {
+  ok: boolean;
+  status: number;
+  payload: T & { error?: string };
 };
 
 function readBool(value: string | undefined, fallback = false) {
@@ -29,62 +40,74 @@ function readBool(value: string | undefined, fallback = false) {
 
 function readInt(value: string | undefined, fallback: number) {
   const parsed = Number.parseInt(value || '', 10);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function normalizeUrl(value: string | undefined) {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.replace(/\/+$/, '') : null;
+function normalizeLoopbackUrl(value: string | undefined) {
+  const parsed = new URL((value || 'http://127.0.0.1:3369').trim());
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (!['127.0.0.1', 'localhost', '::1'].includes(hostname)) {
+    throw new Error('FRUGAL_BASE_URL_MUST_BE_LOOPBACK');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('FRUGAL_BASE_URL_PROTOCOL_NOT_ALLOWED');
+  }
+  parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString().replace(/\/$/, '');
 }
 
-export function getAdapterConfig(provider: AdapterProvider): AdapterConfig {
-  if (provider === 'ollama') {
-    return {
-      enabled: readBool(process.env.CONTINUITY_OLLAMA_ENABLED, true),
-      baseUrl: normalizeUrl(process.env.CONTINUITY_OLLAMA_BASE_URL) || 'http://127.0.0.1:11434',
-      model: process.env.CONTINUITY_OLLAMA_MODEL || 'llama3.1',
-      timeoutMs: readInt(process.env.CONTINUITY_OLLAMA_TIMEOUT_MS, 45000),
-    };
-  }
+function tokenFilePath() {
+  const root = process.env.CONEKTA_FRUGAL_ROOT?.trim()
+    ? resolve(process.env.CONEKTA_FRUGAL_ROOT)
+    : resolve(process.cwd(), '..', 'FRUGAL');
+  return resolve(root, '04_MEMORY', 'continuity', 'api_token');
+}
 
-  if (provider === 'frugal') {
-    return {
-      enabled: readBool(process.env.CONTINUITY_FRUGAL_ENABLED, true),
-      baseUrl: normalizeUrl(process.env.CONTINUITY_FRUGAL_BASE_URL) || 'http://127.0.0.1:3369',
-      timeoutMs: readInt(process.env.CONTINUITY_FRUGAL_TIMEOUT_MS, 45000),
-    };
+function credentialSource(): AdapterStatus['credentialSource'] {
+  if ((process.env.CONEKTA_FRUGAL_API_TOKEN || process.env.ETHERNIUM_API_TOKEN || '').trim()) {
+    return 'environment';
   }
+  return existsSync(tokenFilePath()) ? 'token-file' : 'missing';
+}
 
-  if (provider === 'openclaw') {
-    return {
-      enabled: readBool(process.env.CONTINUITY_OPENCLAW_ENABLED, false),
-      baseUrl: normalizeUrl(process.env.CONTINUITY_OPENCLAW_BASE_URL),
-      apiKey: process.env.CONTINUITY_OPENCLAW_API_KEY || null,
-      timeoutMs: readInt(process.env.CONTINUITY_OPENCLAW_TIMEOUT_MS, 45000),
-    };
+function readFrugalToken() {
+  const configured = (process.env.CONEKTA_FRUGAL_API_TOKEN || process.env.ETHERNIUM_API_TOKEN || '').trim();
+  if (configured) return configured;
+  try {
+    const token = readFileSync(tokenFilePath(), 'utf8').trim();
+    if (token) return token;
+  } catch {
+    // The caller receives a precise, value-free configuration error below.
   }
+  throw new Error('FRUGAL_BEARER_NOT_CONFIGURED');
+}
 
+export function getAdapterConfig(): AdapterConfig {
   return {
-    enabled: readBool(process.env.CONTINUITY_MOLTBOT_ENABLED, false),
-    baseUrl: normalizeUrl(process.env.CONTINUITY_MOLTBOT_BASE_URL),
-    apiKey: process.env.CONTINUITY_MOLTBOT_API_KEY || null,
-    timeoutMs: readInt(process.env.CONTINUITY_MOLTBOT_TIMEOUT_MS, 45000),
+    enabled: readBool(process.env.CONEKTA_FRUGAL_ENABLED, true),
+    baseUrl: normalizeLoopbackUrl(
+      process.env.CONEKTA_FRUGAL_BASE_URL || process.env.CONTINUITY_FRUGAL_BASE_URL,
+    ),
+    timeoutMs: readInt(
+      process.env.CONEKTA_FRUGAL_TIMEOUT_MS || process.env.CONTINUITY_FRUGAL_TIMEOUT_MS,
+      45000,
+    ),
   };
 }
 
 export function getAdapterStatuses(): AdapterStatus[] {
-  return (['frugal', 'ollama', 'openclaw', 'moltbot'] as AdapterProvider[]).map((provider) => {
-    const config = getAdapterConfig(provider);
-    return {
-      provider,
-      enabled: config.enabled,
-      configured: Boolean(config.baseUrl),
-      baseUrl: config.baseUrl,
-      model: config.model || null,
-      hasApiKey: Boolean(config.apiKey),
-    };
-  });
+  const config = getAdapterConfig();
+  const source = credentialSource();
+  return [{
+    provider: 'frugal',
+    authority: 'ethernium-frugal',
+    enabled: config.enabled,
+    configured: config.enabled && source !== 'missing',
+    baseUrl: config.baseUrl,
+    credentialSource: source,
+  }];
 }
 
 function buildTimeoutSignal(timeoutMs: number) {
@@ -96,102 +119,73 @@ function buildTimeoutSignal(timeoutMs: number) {
   };
 }
 
-export type FrugalChatResult = {
-  status?: 'success' | 'degraded' | 'blocked';
-  mode?: string;
-  response?: string;
-  result_class?: string;
-  acted_on?: unknown[];
-  next?: string;
-};
-
-/**
- * Talks to a local Ethernium Frugal instance (POST /chat on its interface
- * server). Frugal answers most intents locally (L1/L2) and only escalates to
- * a neural model when needed, so this is the cheapest bridge provider.
- */
-export async function invokeFrugalChat(message: string, options?: { explain?: boolean; mode?: string }) {
-  const config = getAdapterConfig('frugal');
-  if (!config.enabled || !config.baseUrl) {
-    throw new Error('FRUGAL_ADAPTER_NOT_ENABLED');
-  }
+export async function invokeFrugalResult<T extends FrugalJson = FrugalJson>(
+  path: '/chat' | '/ecosystem/status' | '/ecosystem/seneschal/preflight' | '/ecosystem/chronolith/verify',
+  body: FrugalJson = {},
+): Promise<FrugalHttpResult<T>> {
+  const config = getAdapterConfig();
+  if (!config.enabled) throw new Error('FRUGAL_ADAPTER_NOT_ENABLED');
 
   const timeout = buildTimeoutSignal(config.timeoutMs);
   try {
-    const response = await fetch(`${config.baseUrl}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message,
-        mode: options?.mode || 'agent',
-        explain: Boolean(options?.explain),
-      }),
-      signal: timeout.signal,
-    });
-
-    const payload = (await response.json().catch(() => ({}))) as FrugalChatResult & { error?: string };
-    if (!response.ok) {
-      throw new Error(payload?.error || `FRUGAL_HTTP_${response.status}`);
-    }
-    return payload;
-  } finally {
-    timeout.dispose();
-  }
-}
-
-export async function invokeOllamaChat(messages: OllamaChatMessage[]) {
-  const config = getAdapterConfig('ollama');
-  if (!config.enabled || !config.baseUrl) {
-    throw new Error('OLLAMA_ADAPTER_NOT_ENABLED');
-  }
-
-  const timeout = buildTimeoutSignal(config.timeoutMs);
-  try {
-    const response = await fetch(`${config.baseUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: config.model,
-        stream: false,
-        messages,
-      }),
-      signal: timeout.signal,
-    });
-
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload?.error || `OLLAMA_HTTP_${response.status}`);
-    }
-    return payload;
-  } finally {
-    timeout.dispose();
-  }
-}
-
-export async function forwardBridgePayload(provider: 'openclaw' | 'moltbot', payload: unknown, path?: string) {
-  const config = getAdapterConfig(provider);
-  if (!config.enabled || !config.baseUrl) {
-    throw new Error(`${provider.toUpperCase()}_ADAPTER_NOT_ENABLED`);
-  }
-
-  const timeout = buildTimeoutSignal(config.timeoutMs);
-  try {
-    const response = await fetch(`${config.baseUrl}${path || ''}`, {
+    const response = await fetch(`${config.baseUrl}${path}`, {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${readFrugalToken()}`,
         'Content-Type': 'application/json',
-        ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
       },
-      body: JSON.stringify(payload || {}),
+      body: JSON.stringify(body),
       signal: timeout.signal,
+      cache: 'no-store',
     });
 
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(data?.error || `${provider.toUpperCase()}_HTTP_${response.status}`);
-    }
-    return data;
+    const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+    return { ok: response.ok, status: response.status, payload };
   } finally {
     timeout.dispose();
   }
+}
+
+export async function invokeFrugal<T extends FrugalJson = FrugalJson>(
+  path: '/chat' | '/ecosystem/status' | '/ecosystem/seneschal/preflight' | '/ecosystem/chronolith/verify',
+  body: FrugalJson = {},
+): Promise<T & { error?: string }> {
+  const result = await invokeFrugalResult<T>(path, body);
+  if (!result.ok) {
+    throw new Error(result.payload?.error || `FRUGAL_HTTP_${result.status}`);
+  }
+  return result.payload;
+}
+
+export async function invokeFrugalGet<T extends FrugalJson = FrugalJson>(
+  path: '/telemetry' | '/health' | '/version',
+): Promise<T & { error?: string }> {
+  const config = getAdapterConfig();
+  if (!config.enabled) throw new Error('FRUGAL_ADAPTER_NOT_ENABLED');
+
+  const timeout = buildTimeoutSignal(config.timeoutMs);
+  try {
+    const response = await fetch(`${config.baseUrl}${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${readFrugalToken()}` },
+      signal: timeout.signal,
+      cache: 'no-store',
+    });
+    const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+    if (!response.ok) throw new Error(payload.error || `FRUGAL_HTTP_${response.status}`);
+    return payload;
+  } finally {
+    timeout.dispose();
+  }
+}
+
+export async function invokeFrugalChat(
+  message: string,
+  options?: { explain?: boolean; mode?: string },
+) {
+  return invokeFrugal<FrugalChatResult & FrugalJson>('/chat', {
+    message,
+    mode: options?.mode || 'agent',
+    explain: Boolean(options?.explain),
+  });
 }

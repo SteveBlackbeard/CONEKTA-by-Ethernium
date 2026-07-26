@@ -41,7 +41,9 @@ export async function POST(request: Request) {
 
     let content: string;
     try {
-      content = await fs.readFile(fullPath, 'utf-8');
+      // Operator-linked files are runtime data and must never become build
+      // inputs for Next/Turbopack output tracing.
+      content = await fs.readFile(/* turbopackIgnore: true */ fullPath, 'utf-8');
     } catch {
       return NextResponse.json({ success: false, error: `File not found: ${basename(fullPath)}` }, { status: 404 });
     }

@@ -1,34 +1,60 @@
-# Continuity Conekta Adapter Contract
+# CONEKTA Adapter Contract
 
-Continuity Conekta is a standalone control surface. Continuity Legacy is the runtime and source of truth.
+Status: accepted
+
+Scope: ETHERNIUM PERSONAL
+
+Authority: ETHERNIUM FRUGAL
 
 ## Boundary
 
-- Conekta may read runtime artifacts exposed by a local Continuity Legacy checkout.
-- Conekta may call explicit local adapter endpoints or scripts only when the operator enables them.
-- Continuity Legacy must not import, bundle, or depend on Conekta.
-- Missing runtime artifacts must produce an explicit degraded state instead of silent success.
+CONEKTA is a local presentation and request surface. It may:
 
-## Expected Runtime Artifacts
+- render the declared personal ecosystem topology;
+- link operator-selected directories for read-only visualization;
+- persist local visual asset preferences;
+- keep a local hash-linked UI activity ledger;
+- call the authenticated FRUGAL API over loopback.
 
-- `STATE.json` for Merkle/state telemetry.
-- Event chain data when present.
-- Text files selected through linked-system access for read-only inspection.
-- Optional local chat adapters configured through `.env.local`.
+CONEKTA must not:
 
-## Local Adapter Rules
+- invoke Ollama or another neural model directly;
+- run OpenClaw, Moltbot or a sibling agent as cognitive authority;
+- execute arbitrary legacy scripts;
+- claim local ledger integrity as CHRONOLITH verification;
+- import foreign Continuity state as live memory or governance;
+- render a simulated success, connection, node or metric as real.
 
-- Read-only behavior is the default.
-- Mutating actions must stay behind explicit UI commands and local runtime endpoints.
-- External AI providers must be configured through environment variables.
-- Secret values must never be rendered in the UI or written to event logs.
+## Promoted calls
 
-## Health Gate
+| Conekta operation | FRUGAL endpoint | External role |
+|---|---|---|
+| Chat | `POST /chat` | FRUGAL authority |
+| SENESCHAL guard | `POST /ecosystem/seneschal/preflight` | consultative MCP |
+| CHRONOLITH status | `POST /ecosystem/chronolith/verify` | read-only evidence |
 
-The repository-level health gate is:
+The SENESCHAL preflight runs before a non-local Seneschal chat request. A
+blocked preflight cannot continue to `/chat`. CHRONOLITH `no_baseline` is an
+honest connected state, not a successful integrity claim.
 
-```bash
-npm run health
-```
+## Credentials and transport
 
-It checks the required repo structure, lint, and production build.
+- All FRUGAL calls use a server-held bearer.
+- Status responses expose only the credential source classification, never the
+  value.
+- Adapter URLs are restricted to HTTP(S) loopback hosts.
+- Conekta binds its own server to `127.0.0.1`.
+- Unsafe Conekta API methods require exact same-origin browser requests or
+  `CONEKTA_API_TOKEN`.
+
+## Failure semantics
+
+Missing or unreachable peers produce `missing`, `unavailable`, `blocked`,
+`no_baseline` or an HTTP failure. None may be translated into `online`,
+`verified`, `sealed` or `success`.
+
+## Test contract
+
+`npm test` must pass before a commit. The production integration test exercises
+real HTTP boundaries with a controlled FRUGAL peer; it does not mock Conekta's
+own routes in process.

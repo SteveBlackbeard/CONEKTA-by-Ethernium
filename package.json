@@ -1,12 +1,17 @@
 {
   "name": "conekta",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "private": true,
   "scripts": {
-    "dev": "set NEXT_DISABLE_TURBOPACK=1&& next dev",
+    "dev": "set NEXT_DISABLE_TURBOPACK=1&& next dev -H 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "lint": "eslint",
+    "test": "npm run lint && npm run build && npm run test:integration",
+    "test:integration": "node --test test/frugal-boundary.test.mjs",
     "health": "node scripts/health.mjs"
   },
   "dependencies": {
@@ -17,7 +22,7 @@
     "chokidar": "^4.0.3",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
-    "next": "^16.2.9",
+    "next": "16.2.12",
     "postprocessing": "^6.39.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -30,8 +35,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.9",
+    "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.23",
+      "sharp": "0.35.3"
+    }
   }
 }

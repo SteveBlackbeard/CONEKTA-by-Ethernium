@@ -15,6 +15,19 @@ export interface StateSnapshot {
   crystallizer_version?: string | null;
   /** false when the runtime STATE.json is not present yet */
   available?: boolean;
+  source?: string;
+  schema?: string;
+  error?: string;
+  routing?: {
+    total?: number;
+    l1?: number;
+    l2?: number;
+    l3?: number;
+    l4?: number;
+    bypass_ratio?: number;
+  };
+  latency_ms?: { p50?: number | null; p95?: number | null; sample_count?: number };
+  mcp?: { connected_servers?: number; configured_servers?: number };
 }
 
 export interface ChainEventSnapshot {
@@ -180,6 +193,7 @@ function inferMode({
 
 export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSignals {
   const state = input.state;
+  const telemetryUnavailable = state?.available === false;
   const physics = state?.physics;
   const drift = clamp(Number(state?.drift_kl || 0), 0, 1);
   const eta = clamp(Number(physics?.eta || 0), 0, 1);
@@ -190,7 +204,7 @@ export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSi
   const latestEvent = chainEvents[0];
   const recentEventType = normalizeType(latestEvent?.type);
   const recentEventFreshnessSec = getEventFreshnessSeconds(latestEvent?.timestamp);
-  const mode = inferMode({
+  const mode = telemetryUnavailable ? 'AUDIT' : inferMode({
     drift,
     chainStatus: input.chainStatus,
     activeAction: input.activeAction,
@@ -198,34 +212,44 @@ export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSi
     recentEventFreshnessSec,
   });
   const palette = MODE_PALETTES[mode];
-  const chainTrustBase = input.chainStatus
+  const chainTrustBase = telemetryUnavailable
+    ? 0
+    : input.chainStatus
     ? (input.chainStatus.intact ? 1 : 0.12)
     : chainEvents.length > 0
     ? 0.84
     : 0.72;
   const chainTrust = clamp(chainTrustBase - drift * 0.08);
-  const syncLevel = clamp((eta * 0.68) + ((1 - drift) * 0.24) + (chainTrust * 0.08)) * 100;
+  const syncLevel = telemetryUnavailable
+    ? 0
+    : clamp((eta * 0.68) + ((1 - drift) * 0.24) + (chainTrust * 0.08)) * 100;
   const activity = clamp(
     chainEvents.length / 8
     + liveLogs.length / 8
     + (input.activeAction ? 0.28 : 0)
     + Math.min(0.18, linkedProjectCount * 0.05),
   );
-  const severity = clamp(
+  const severity = telemetryUnavailable ? 0.35 : clamp(
     drift * 4.6
     + (input.chainStatus && !input.chainStatus.intact ? 0.46 : 0)
     + (mode === 'AUDIT' ? 0.12 : 0)
     + (mode === 'SEAL' ? 0.18 : 0)
     + activity * 0.1,
   );
-  const severityLabel = severity >= 0.72 ? 'CRITICAL' : severity >= 0.4 ? 'ELEVATED' : 'LOW';
-  const chainTrustLabel = chainTrust >= 0.92 ? 'LOCKED' : chainTrust >= 0.72 ? 'VERIFIED' : chainTrust >= 0.42 ? 'WATCH' : 'BREACHED';
+  const severityLabel = telemetryUnavailable
+    ? 'UNAVAILABLE'
+    : severity >= 0.72 ? 'CRITICAL' : severity >= 0.4 ? 'ELEVATED' : 'LOW';
+  const chainTrustLabel = telemetryUnavailable
+    ? 'UNAVAILABLE'
+    : chainTrust >= 0.92 ? 'LOCKED' : chainTrust >= 0.72 ? 'VERIFIED' : chainTrust >= 0.42 ? 'WATCH' : 'BREACHED';
   const merkle = String(state?.merkle_root || '0'.repeat(64));
   const merkleShort = merkle.slice(0, 12).toUpperCase();
   const merkleFingerprint = `${merkle.slice(0, 6).toUpperCase()}-${merkle.slice(-6).toUpperCase()}`;
 
-  let modeReason = 'SOVEREIGN_IDLE';
-  if (input.chainStatus && !input.chainStatus.intact) {
+  let modeReason = telemetryUnavailable ? 'FRUGAL_TELEMETRY_UNAVAILABLE' : 'SOVEREIGN_IDLE';
+  if (telemetryUnavailable) {
+    // Keep the explicit unavailable reason.
+  } else if (input.chainStatus && !input.chainStatus.intact) {
     modeReason = 'CHAIN_TAMPER_DETECTED';
   } else if (mode === 'SEAL') {
     modeReason = 'VAULT_LOCK_SEQUENCE_ACTIVE';
@@ -241,7 +265,7 @@ export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSi
     mode,
     palette,
     modeReason,
-    modeLabel: palette.label,
+    modeLabel: telemetryUnavailable ? 'DATA_UNAVAILABLE' : palette.label,
     syncLevel,
     chainTrust,
     chainTrustLabel,

@@ -17,6 +17,12 @@ type TimelineState = {
   error?: string;
   total: number;
   entries: TimelineEntry[];
+  verification?: {
+    connected: boolean;
+    ok: boolean;
+    status: number | null;
+    verdict: string;
+  };
 };
 
 function formatAge(timestamp: string) {
@@ -62,6 +68,7 @@ export function ChronolithTimeline({
           error: payload.error,
           total: Number(payload.total || 0),
           entries: Array.isArray(payload.entries) ? payload.entries : [],
+          verification: payload.verification,
         });
       }
     } catch {
@@ -99,7 +106,7 @@ export function ChronolithTimeline({
               color: timeline?.intact === false ? palette.warning : palette.emphasis,
             }}
           >
-            {timeline?.intact === false ? 'BREACHED' : 'SEALED'}
+            {timeline?.intact === false ? 'BREACHED' : timeline?.total ? 'VERIFIED' : 'EMPTY'}
           </span>
           <a
             href="/api/chronolith/export"
@@ -116,6 +123,11 @@ export function ChronolithTimeline({
         {tt(dictionary, 'chronolith.events', 'EVENTS')}: {timeline?.total ?? 0}
         {loading ? ' // SYNCING' : ''}
         {timeline?.error ? ` // ${timeline.error}` : ''}
+      </div>
+      <div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '1.4px' }}>
+        CHRONOLITH: {timeline?.verification?.connected
+          ? String(timeline.verification.verdict || (timeline.verification.ok ? 'verified' : 'failed')).toUpperCase()
+          : 'UNAVAILABLE'}
       </div>
 
       {visibleEntries.length === 0 ? (

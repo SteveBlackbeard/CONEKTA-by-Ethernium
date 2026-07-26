@@ -1,6 +1,6 @@
 ﻿"use client";
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Shield, Zap, Activity, Lock, Terminal, Globe } from 'lucide-react';
+import { Shield, Terminal, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Language, LANGUAGES, LANGUAGE_NAMES, translations, translateActiveCommand, translateModeLabel, translateReason, tt } from '@/lib/i18n';
 import { LinkedSystem, ScannedEntry } from '@/lib/graphData';
@@ -9,7 +9,7 @@ import { listTopLevelEntriesFromHandle, registerLinkedSystemHandle, removeLinked
 import { getErrorMessage } from '@/lib/errors';
 
 const DEFAULT_STATE: StateSnapshot = {
-  merkle_root: "awaiting_crystallization",
+  merkle_root: "not_available",
   physics: { H: 0, H_max: 0, eta: 0, N: 0, W: 0, gini: 0 },
   drift_kl: 0,
   crystallizer_version: null,
@@ -255,40 +255,6 @@ const SovereignHUD = ({
       window.dispatchEvent(new CustomEvent('continuity:open-link-modal'));
       return;
     }
-    setActiveCommand(action);
-    
-    // Map button actions to API endpoints or internal logic
-    const endpointMap: Record<string, string> = {
-      'CRYSTALLIZE': '/api/actions/crystallize',
-      'AUDIT': '/api/actions/audit',
-      'SEAL': '/api/actions/seal',
-    };
-
-    const endpoint = endpointMap[action];
-    
-    if (endpoint) {
-      try {
-        console.log(`[SOVEREIGN] Triggering ${action} via ${endpoint}`);
-        const response = await fetch(endpoint, { method: 'POST' });
-        const result = await response.json();
-        
-        if (result.success) {
-          // Success: Root will fetch new state automatically via polling
-          refreshChainEvents();
-          refreshSystemState();
-          setTimeout(() => {
-            refreshChainEvents();
-            refreshSystemState();
-          }, 450);
-        } else {
-          console.error(`[SOVEREIGN] ${action} Failed:`, result.error);
-        }
-      } catch (err) {
-        console.error(`[SOVEREIGN] Network error during ${action}:`, err);
-      }
-    }
-
-    setTimeout(() => setActiveCommand(null), 2500);
   };
 
   const verifyChain = async () => {
@@ -386,8 +352,8 @@ const SovereignHUD = ({
               </div>
             </div>
             <div style={{ minWidth: 0 }}>
-              <h1 className="text-gradient" style={{ fontSize: '1.25rem', fontWeight: 900, lineHeight: 1.1 }}>CONTINUITY LEGACY</h1>
-              <p style={{ ...softText, fontSize: '0.55rem', letterSpacing: '3px', textTransform: 'uppercase' }}>{t['hud.brand']} {'//'} {state.crystallizer_version ? `v${state.crystallizer_version}` : 'STANDALONE'}</p>
+              <h1 className="text-gradient" style={{ fontSize: '1.25rem', fontWeight: 900, lineHeight: 1.1 }}>CONEKTA</h1>
+              <p style={{ ...softText, fontSize: '0.55rem', letterSpacing: '3px', textTransform: 'uppercase' }}>ETHERNIUM PERSONAL {'//'} {state.available ? 'FRUGAL ONLINE' : 'FRUGAL UNAVAILABLE'}</p>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '4px 8px', background: signals.palette.panelSoft, border: `1px solid ${signals.palette.border}`, boxShadow: `0 0 22px ${signals.palette.accent}14` }}>
                 <div className="pulse-dot" style={{ width: '6px', height: '6px', background: signals.palette.accent, boxShadow: `0 0 12px ${signals.palette.accent}` }} />
                 <span style={{ ...glowText, fontSize: '0.46rem', letterSpacing: '2px', color: signals.palette.emphasis }}>{modeLabelText}</span>
@@ -511,52 +477,11 @@ const SovereignHUD = ({
           </div>
         </div>
 
-        {/* Modular Nodes */}
-        <div style={{ marginBottom: '18px' }}>
-          <p style={{ ...faintText, fontSize: '0.55rem', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '8px' }}>{t['hud.cluster']}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
-            {['LITE', 'PRO', 'OMEGA'].map((node) => (
-              <div key={node} style={{ border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)', padding: '8px', textAlign: 'center' }}>
-                <p style={{ ...softText, fontSize: '0.45rem', marginBottom: '4px' }}>{node}</p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                  <div className="pulse-dot" style={{ width: '4px', height: '4px', background: signals.palette.accent, boxShadow: `0 0 10px ${signals.palette.accent}` }} />
-                  <span style={{ ...glowText, fontSize: '0.5rem', fontWeight: 700 }}>{t['hud.live']}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Command Buttons */}
+        {/* The only promoted local action here is linking a project for
+            visualization/read access. Cognitive and integrity actions remain
+            behind FRUGAL's governed adapters. */}
         <nav style={{ display: 'flex', flexDirection: 'column', gap: isPhone ? '10px' : '12px', marginBottom: 'auto' }}>
           <p style={{ ...faintText, fontSize: '0.6rem', letterSpacing: '3px', textTransform: 'uppercase', marginBottom: '8px' }}>{t['hud.protocols']}</p>
-          <button 
-            onMouseEnter={(e) => showTooltip('synth', t['hud.tooltip.synth'], e)}
-            onMouseLeave={() => setHoveredItem(null)}
-            onClick={() => triggerAction('CRYSTALLIZE')} 
-            className="btn-liquid-3d"
-            style={compactButtonStyle}
-          >
-            <Zap size={14} style={{ marginRight: '10px' }} /> <span>{t['hud.synth_dna']}</span>
-          </button>
-          <button 
-            onMouseEnter={(e) => showTooltip('audit', t['hud.tooltip.audit'], e)}
-            onMouseLeave={() => setHoveredItem(null)}
-            onClick={() => triggerAction('AUDIT')} 
-            className="btn-liquid-3d"
-            style={compactButtonStyle}
-          >
-            <Activity size={14} style={{ marginRight: '10px' }} /> <span>{t['hud.audit_physics']}</span>
-          </button>
-          <button 
-            onMouseEnter={(e) => showTooltip('seal', t['hud.tooltip.seal'], e)}
-            onMouseLeave={() => setHoveredItem(null)}
-            onClick={() => triggerAction('SEAL')} 
-            className="btn-liquid-3d"
-            style={compactButtonStyle}
-          >
-            <Lock size={14} style={{ marginRight: '10px' }} /> <span>{t['hud.seal_vault']}</span>
-          </button>
           <button 
             onMouseEnter={(e) => showTooltip('access', linkedSystems.length > 0 ? t['hud.tooltip.linked'] : t['hud.tooltip.link'], e)}
             onMouseLeave={() => setHoveredItem(null)}

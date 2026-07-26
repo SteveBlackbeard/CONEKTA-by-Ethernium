@@ -21,8 +21,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CONTINUITY LEGACY | NEXUS Dashboard",
-  description: "Sovereign Mirror for the Continuity Legacy Framework by Ethernium. Protecting the logical lineage of your software.",
+  title: "CONEKTA | ETHERNIUM PERSONAL",
+  description: "Federated local visualization and request surface governed by ETHERNIUM FRUGAL.",
 };
 
 export default function RootLayout({

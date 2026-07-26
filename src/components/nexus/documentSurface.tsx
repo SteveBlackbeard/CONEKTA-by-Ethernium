@@ -4,25 +4,30 @@ import { tt } from '@/lib/i18n';
 import { OpenDocState } from './types';
 
 export function DecryptionHandshake({ onComplete, dictionary }: { onComplete: () => void; dictionary: Record<string, string> }) {
-  const [stream, setStream] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
   useEffect(() => {
-    const chars = "0123456789ABCDEF";
     const iv = setInterval(() => {
-      let line = "";
-      for (let i = 0; i < 40; i++) line += chars[Math.floor(Math.random() * 16)];
-      setStream(prev => [line, ...prev].slice(0, 5));
-    }, 40);
-    setTimeout(() => { clearInterval(iv); setStream([]); onComplete(); }, 600);
-    return () => clearInterval(iv);
+      setProgress((value) => Math.min(100, value + 20));
+    }, 60);
+    const done = setTimeout(() => {
+      clearInterval(iv);
+      setProgress(100);
+      onComplete();
+    }, 360);
+    return () => {
+      clearInterval(iv);
+      clearTimeout(done);
+    };
   }, [onComplete]);
 
-  if (stream.length === 0) return null;
   return (
     <div style={{ color: '#ffffff22', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', paddingBottom: '20px', borderBottom: '1px solid #ffffff11', marginBottom: '20px' }}>
        <div style={{ color: '#ffffff', marginBottom: '10px', fontSize: '0.6rem', letterSpacing: '2px' }}>
-         [ {tt(dictionary, 'viewer.handshake', 'INTEGRITY_HANDSHAKE_IN_PROGRESS')} ]
+         [ {tt(dictionary, 'viewer.handshake', 'DOCUMENT_RENDERING')}{' // '}{progress}% ]
        </div>
-       {stream.map((s, i) => <div key={i}>{s}</div>)}
+       <div style={{ height: '2px', background: 'rgba(255,255,255,0.08)' }}>
+         <div style={{ width: `${progress}%`, height: '100%', background: '#67e8f9', transition: 'width 60ms linear' }} />
+       </div>
     </div>
   );
 }
@@ -280,4 +285,3 @@ export function renderDocumentSurface(doc: OpenDocState, query: string, dictiona
 
   return renderCodeFrame(doc.content, query, 'text');
 }
-
