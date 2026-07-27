@@ -24,6 +24,8 @@ CONEKTA must not:
 - claim local ledger integrity as CHRONOLITH verification;
 - import foreign Continuity state as live memory or governance;
 - render a simulated success, connection, node or metric as real.
+- substitute zero for a metric FRUGAL does not expose; unavailable values stay
+  explicitly unavailable.
 
 ## Promoted calls
 

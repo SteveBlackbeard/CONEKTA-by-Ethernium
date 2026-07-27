@@ -203,6 +203,8 @@ test('production server enforces FRUGAL-only authority and real ecosystem delega
   assert.equal(telemetryPayload.physics.H, 1);
   assert.equal(telemetryPayload.physics.N, 10);
   assert.equal(telemetryPayload.physics.W, 12);
+  assert.equal(telemetryPayload.drift_kl, null);
+  assert.equal(telemetryPayload.drift_available, false);
 
   telemetryAvailable = false;
   const unavailableTelemetry = await fetch(`${origin}/api/state`);
@@ -211,6 +213,7 @@ test('production server enforces FRUGAL-only authority and real ecosystem delega
   assert.equal(unavailablePayload.available, false);
   assert.equal(unavailablePayload.source, 'frugal');
   assert.equal(unavailablePayload.physics.eta, 0);
+  assert.equal(unavailablePayload.drift_kl, null);
 
   assert.ok(observed.length >= 5);
   assert.ok(observed.every((entry) => entry.authorization === `Bearer ${bearer}`));

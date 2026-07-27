@@ -1987,7 +1987,7 @@ interface NexusCoreProps {
   setLinkedSystems: React.Dispatch<React.SetStateAction<LinkedSystem[]>>;
   setActiveLinkedSystemId: React.Dispatch<React.SetStateAction<string | null>>;
   physics?: PhysicsSnapshot;
-  drift?: number;
+  drift?: number | null;
   merkle?: string;
   chainEvents: ChainEventSnapshot[];
   chainStatus: ChainStatusSnapshot | null;
