@@ -2,6 +2,7 @@
   "name": "conekta",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "set NEXT_DISABLE_TURBOPACK=1&& next dev",
     "build": "next build",
