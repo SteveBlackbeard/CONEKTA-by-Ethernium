@@ -113,12 +113,19 @@ export function ChronolithTimeline({
       </div>
 
       <div style={{ ...faintText, fontSize: '0.4rem', letterSpacing: '1.6px' }}>
-        {tt(dictionary, 'chronolith.events', 'EVENTS')}: {timeline?.total ?? 0}
+        {tt(dictionary, 'chronolith.events', 'EVENTS')}: {timeline === null ? '—' : timeline.total}
         {loading ? ' // SYNCING' : ''}
         {timeline?.error ? ` // ${timeline.error}` : ''}
       </div>
 
-      {visibleEntries.length === 0 ? (
+      {timeline === null ? (
+        // Not loaded yet — the panel only fetches once its rail is opened. Do not
+        // assert emptiness before we have data; that reads as "no events" when it
+        // means "unknown". Show the awaiting state until the first load resolves.
+        <div style={{ ...faintText, fontSize: '0.44rem', fontStyle: 'italic' }}>
+          {tt(dictionary, 'chronolith.awaiting', 'AWAITING_CHAIN…')}
+        </div>
+      ) : visibleEntries.length === 0 ? (
         <div style={{ ...faintText, fontSize: '0.44rem', fontStyle: 'italic' }}>
           {tt(dictionary, 'chronolith.empty', 'NO_CHRONICLED_EVENTS')}
         </div>
