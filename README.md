@@ -147,3 +147,7 @@ The adapter boundary is documented in `docs/ADAPTER_CONTRACT.md`.
 - Browser-linked directories do not expose absolute filesystem paths. When a linked system cannot be resolved directly by the backend, the dashboard falls back to a structural node model instead of failing visually.
 - Inter-system bridges are intentionally not rendered unless a real operational or cryptographic relationship is modeled in runtime state.
 - Public ecosystem behavior should be documented here only after the runtime behavior is stable enough to trust as a real capability.
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or [Apache License 2.0](LICENSE-APACHE) at your option. Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this work shall be dual licensed as above, without any additional terms or conditions.
