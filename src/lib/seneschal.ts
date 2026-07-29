@@ -9,6 +9,7 @@ import { appendEvent, getEvents, getEventCount, verifyChain, ChainEvent } from '
 import { getAdapterConfig, getAdapterStatuses, invokeFrugalChat } from '@/lib/localAdapters';
 import { getErrorMessage } from '@/lib/errors';
 import { getRuntimeRoot, getScriptsDir, getStateFilePath } from '@/lib/runtimePaths';
+import { listRegisteredSystems, RegisteredLinkedSystem } from '@/lib/linkedSystemsRegistry';
 
 export type SeneschalSource = 'local' | 'frugal';
 
@@ -38,6 +39,7 @@ interface EcosystemContext {
   /** Which scripted actions are actually runnable; the rest would 501. */
   actionsAvailable: Record<string, boolean>;
   frugalConfigured: boolean;
+  linkedSystems: RegisteredLinkedSystem[];
 }
 
 // The scripts each action shells out to. scriptsDir was collected into the
@@ -90,7 +92,7 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
   const eventTotal = await getEventCount();
   const scriptsDir = getScriptsDir();
   const actionsAvailable = await probeActions(scriptsDir);
-  const frugal = getAdapterConfig('frugal');
+  const [frugal, linkedSystems] = [getAdapterConfig('frugal'), await listRegisteredSystems()];
 
   return {
     stateAvailable,
@@ -107,6 +109,7 @@ async function buildEcosystemContext(): Promise<EcosystemContext> {
     scriptsDir,
     actionsAvailable,
     frugalConfigured: Boolean(frugal.enabled && frugal.baseUrl),
+    linkedSystems,
   };
 }
 
@@ -157,6 +160,7 @@ function buildStatusReport(context: EcosystemContext) {
     `RUNTIME_ROOT: ${context.runtimeRoot}`,
     `ACCIONES: ${formatActions(context.actionsAvailable)}`,
     `FRUGAL_BRIDGE: ${context.frugalConfigured ? 'CONFIGURADO' : 'NO_DISPONIBLE'}`,
+    `SISTEMAS_VINCULADOS: ${context.linkedSystems.length}${context.linkedSystems.length ? ` // ${context.linkedSystems.map((system) => `${system.name} (${system.accessMode})`).join(', ')}` : ''}`,
   ];
   return lines.join('\n');
 }
@@ -277,6 +281,7 @@ function buildFrugalEnvelope(prompt: string, context: EcosystemContext) {
     '[SENESCHAL_CONTEXT]',
     buildStatusReport(context),
     '[/SENESCHAL_CONTEXT]',
+    `[LINKED_SYSTEMS]\n${JSON.stringify(context.linkedSystems.map(({ id, name, accessMode, entryCount }) => ({ id, name, accessMode, entryCount })))}\n[/LINKED_SYSTEMS]`,
     'Eres SENESCHAL, mayordomo operador del ecosistema CONEKTA/Continuity. Responde de forma operativa y concisa usando el contexto anterior cuando sea relevante.',
     `Consulta del operador: ${prompt}`,
   ].join('\n');
@@ -350,6 +355,7 @@ export async function getSeneschalStatus() {
       chainIntact: context.chainIntact,
       eventCount: context.eventCount,
       frugalConfigured: context.frugalConfigured,
+      linkedSystems: context.linkedSystems,
     },
     adapters: getAdapterStatuses(),
   };

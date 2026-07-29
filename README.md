@@ -37,6 +37,10 @@ Chain integrity note: event hashing uses canonical JSON with recursively sorted
 keys. Chains produced before this (which excluded payloads from the hash) will
 not verify and must be re-anchored.
 
+These are CONEKTA adapter modules, not embedded copies of the independent Python
+packages. Product roles, the validated version lines, and the filesystem trust
+boundary are defined in [`docs/PRODUCT_CONTRACT.md`](./docs/PRODUCT_CONTRACT.md).
+
 ## Current capabilities
 
 - Live dashboard signals derived from state, drift, chain integrity, actions, and linked-system count.
@@ -66,6 +70,12 @@ npm run health
 ```
 
 `npm run health` is the release gate for this repository. It verifies the required Conekta structure, lint, and production build.
+It also runs the automated security and runtime unit suite.
+
+Filesystem APIs are loopback-only by default. Do not enable
+`CONEKTA_ALLOW_REMOTE_FILESYSTEM` unless the deployment is protected by trusted
+authentication; linked runtime roots are registered server-side and addressed
+by opaque IDs.
 
 ## Local AI bridge
 

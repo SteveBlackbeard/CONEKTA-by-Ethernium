@@ -753,7 +753,7 @@ const NexusCore = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filePath: node.filePath,
-          systemRoot: linkedSystem?.accessMode === 'runtime' ? linkedSystem.rootPath : undefined,
+          systemId: linkedSystem?.accessMode === 'runtime' ? linkedSystem.id : undefined,
         }),
       });
       const data = await res.json();
@@ -2000,6 +2000,5 @@ interface NexusCoreProps {
 }
 
 export default NexusCore;
-
 
 

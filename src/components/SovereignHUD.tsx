@@ -144,11 +144,24 @@ const SovereignHUD = ({
       return [...prev, { ...nextSystem, entries, accessMode }];
     });
     setActiveLinkedSystemId(nextSystem.id);
+    void fetch('/api/systems', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: nextSystem.id,
+        name: systemName,
+        rootPath: accessMode === 'runtime' ? normalizedRoot : undefined,
+        accessMode,
+        entryCount: entries.length,
+        entries,
+      }),
+    });
     return nextSystem.id;
   }, [linkedSystems, setActiveLinkedSystemId, setLinkedSystems]);
 
   const unlinkSystem = (systemId: string) => {
     removeLinkedSystemHandle(systemId);
+    void fetch(`/api/systems?id=${encodeURIComponent(systemId)}`, { method: 'DELETE' });
     const remaining = linkedSystems.filter((system) => system.id !== systemId);
     setLinkedSystems(remaining);
     setActiveLinkedSystemId((current) => current === systemId ? (remaining[0]?.id || null) : current);

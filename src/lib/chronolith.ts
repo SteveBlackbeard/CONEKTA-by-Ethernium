@@ -4,10 +4,9 @@
 // every entry carries a per-event verification flag derived from a full
 // chain re-verification, and the auditable export is itself digest-sealed so
 // a copy can be checked for tampering offline.
-import { promises as fs } from 'fs';
 import crypto from 'crypto';
-import { ChainEvent, ChainVerification, verifyChain } from '@/lib/eventChain';
-import { getEventChainFilePath, getRuntimeRoot } from '@/lib/runtimePaths';
+import { ChainEvent, ChainVerification, getEventSnapshot, verifyEventSnapshot } from '@/lib/eventChain';
+import { getRuntimeRoot } from '@/lib/runtimePaths';
 
 export interface TimelineEntry {
   seq: number;
@@ -55,19 +54,6 @@ function summarizePayload(payload: unknown): string {
   return parts.join(' // ').slice(0, 160);
 }
 
-async function readAllEvents(): Promise<ChainEvent[]> {
-  try {
-    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
-    return content
-      .trim()
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as ChainEvent);
-  } catch {
-    return [];
-  }
-}
-
 function isEventVerified(event: ChainEvent, verification: ChainVerification): boolean {
   if (verification.intact) return true;
   if (typeof verification.brokenAtSeq !== 'number') return false;
@@ -76,7 +62,8 @@ function isEventVerified(event: ChainEvent, verification: ChainVerification): bo
 
 /** Newest-first timeline with per-event verification flags. */
 export async function getTimeline(limit = 20): Promise<ChronolithTimeline> {
-  const [events, verification] = await Promise.all([readAllEvents(), verifyChain()]);
+  const events = await getEventSnapshot();
+  const verification = verifyEventSnapshot(events);
 
   const entries = events
     .slice(-Math.max(1, limit))
@@ -114,7 +101,8 @@ export interface ChronolithExport {
 
 /** Full auditable history: the raw chain plus verification and a seal digest. */
 export async function exportHistory(): Promise<ChronolithExport> {
-  const [events, verification] = await Promise.all([readAllEvents(), verifyChain()]);
+  const events = await getEventSnapshot();
+  const verification = verifyEventSnapshot(events);
   const chainJson = JSON.stringify(events);
   const exportDigest = crypto.createHash('sha256').update(chainJson).digest('hex');
 

@@ -4,10 +4,13 @@ import { join } from 'path';
 import { getErrorMessage } from '@/lib/errors';
 import { resolveLinkedDirectory } from '@/lib/runtimePaths';
 import { appendEvent } from '@/lib/eventChain';
+import { requireLocalFilesystemRequest } from '@/lib/filesystemSecurity';
 
 const EXCLUDE = ['.git', 'node_modules', '__pycache__', '.pytest_cache', '.venv', 'dist', '.next', '.egg-info'];
 
 export async function POST(request: Request) {
+  const denied = requireLocalFilesystemRequest(request);
+  if (denied) return denied;
   try {
     const { projectPath } = await request.json();
 

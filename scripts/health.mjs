@@ -9,6 +9,10 @@ const requiredPaths = [
   'src/app/page.tsx',
   'src/lib/localAdapters.ts',
   'docs/ADAPTER_CONTRACT.md',
+  'docs/PRODUCT_CONTRACT.md',
+  'src/lib/filesystemSecurity.ts',
+  'src/lib/linkedSystemsRegistry.ts',
+  'vitest.config.ts',
 ];
 
 function run(command, args) {
@@ -29,6 +33,7 @@ for (const relativePath of requiredPaths) {
 }
 
 run('npm', ['run', 'lint']);
+run('npm', ['run', 'test']);
 run('npm', ['run', 'build']);
 
 console.log('Continuity Conekta health check passed.');

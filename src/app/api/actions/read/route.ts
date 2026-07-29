@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
-import { basename, isAbsolute, resolve } from 'path';
+import { basename } from 'path';
 import { getErrorMessage } from '@/lib/errors';
-import { isWithin, resolveLinkedDirectory, resolveWithinRuntimeRoot } from '@/lib/runtimePaths';
+import { resolveWithinRuntimeRoot } from '@/lib/runtimePaths';
+import { resolveRegisteredSystemFile } from '@/lib/linkedSystemsRegistry';
+import { requireLocalFilesystemRequest } from '@/lib/filesystemSecurity';
 
 const TEXT_EXTENSIONS = ['.md', '.json', '.py', '.ts', '.tsx', '.yml', '.yaml', '.toml', '.txt', '.css', '.js', '.html', '.ps1'];
 const MAX_CONTENT_CHARS = 10000;
 
 export async function POST(request: Request) {
+  const denied = requireLocalFilesystemRequest(request);
+  if (denied) return denied;
   try {
-    const { filePath, systemRoot } = await request.json();
+    const { filePath, systemId } = await request.json();
 
     if (!filePath || typeof filePath !== 'string') {
       return NextResponse.json({ success: false, error: 'No file path provided' }, { status: 400 });
@@ -18,19 +22,14 @@ export async function POST(request: Request) {
     // Resolve inside an explicitly linked system root, or inside the runtime
     // root. Anything escaping those boundaries (path traversal) is rejected.
     let fullPath: string | null = null;
-    if (systemRoot && typeof systemRoot === 'string') {
-      const linkedRoot = resolveLinkedDirectory(systemRoot);
-      if (!linkedRoot) {
-        return NextResponse.json({ success: false, error: 'Linked system root not found' }, { status: 404 });
-      }
-      const candidate = isAbsolute(filePath) ? resolve(filePath) : resolve(linkedRoot, filePath);
-      fullPath = isWithin(linkedRoot, candidate) ? candidate : null;
+    if (systemId && typeof systemId === 'string') {
+      fullPath = await resolveRegisteredSystemFile(systemId, filePath);
     } else {
       fullPath = resolveWithinRuntimeRoot(filePath);
     }
 
     if (!fullPath) {
-      return NextResponse.json({ success: false, error: 'Path outside permitted roots' }, { status: 403 });
+      return NextResponse.json({ success: false, error: 'Path outside registered roots' }, { status: 403 });
     }
 
     const dotIndex = fullPath.lastIndexOf('.');

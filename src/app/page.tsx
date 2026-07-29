@@ -108,6 +108,20 @@ export default function Home() {
   const [activeCommand, setActiveCommand] = useState<string | null>(null);
   const [stateLatencyMs, setStateLatencyMs] = useState<number | null>(null);
 
+  React.useEffect(() => {
+    fetch('/api/systems')
+      .then((response) => response.json())
+      .then((payload) => {
+        const systems = Array.isArray(payload.systems) ? payload.systems : [];
+        setLinkedSystems(systems.map((system: LinkedSystem & { entries?: LinkedSystem['entries'] }) => ({
+          ...system,
+          entries: Array.isArray(system.entries) ? system.entries : [],
+        })));
+        setActiveLinkedSystemId((current) => current || systems[0]?.id || null);
+      })
+      .catch(() => undefined);
+  }, []);
+
   const refreshSystemState = useCallback(() => {
     const startedAt = performance.now();
     return fetch('/api/state')

@@ -16,7 +16,7 @@ export function getRuntimeRoot(): string {
   const configured = process.env.CONEKTA_RUNTIME_ROOT?.trim();
   const root = configured && configured.length > 0
     ? resolve(configured)
-    : join(process.cwd(), 'runtime');
+    : join(/* turbopackIgnore: true */ process.cwd(), 'runtime');
 
   if (ensuredRoot !== root) {
     try {

@@ -17,38 +17,43 @@ export interface ChainEvent {
 // Serializes appends so two concurrent actions can't read the same tail and
 // duplicate a sequence number.
 let appendQueue: Promise<unknown> = Promise.resolve();
-// Tail cache, guarded by the file size observed when it was populated. If the
-// chain is rotated, truncated, or the runtime root changes underneath us, the
-// size no longer matches and we re-read instead of appending onto a stale seq.
+// Tail cache guarded by file identity (size + modification/change time). If the
+// chain is replaced, truncated or edited in place, we re-read before appending.
 let lastEventCache: ChainEvent | null = null;
-let lastEventCacheSize = -1;
+let lastEventCacheIdentity = '';
 
-// Same size-guard, applied to the whole-file readers. verifyChain, getEvents
+// The same identity guard is applied to the whole-file readers. verifyChain, getEvents
 // and getEventCount each re-read and re-split the entire chain, and with
 // polling at 7s/18s plus a Seneschal context per message that is several O(n)
-// reads per cycle over a log that only grows. The guard is the file size: if
-// it has not changed, the lines cannot have.
+// reads per cycle over a log that only grows.
 let linesCache: string[] | null = null;
-let linesCacheSize = -1;
+let linesCacheIdentity = '';
+
+async function chainIdentity(): Promise<string> {
+  try {
+    const stats = await fs.stat(getEventChainFilePath());
+    return `${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+  } catch {
+    return '';
+  }
+}
 
 async function readChainLines(): Promise<string[]> {
-  let size = -1;
-  try {
-    size = (await fs.stat(getEventChainFilePath())).size;
-  } catch {
+  const identity = await chainIdentity();
+  if (!identity) {
     linesCache = null;
-    linesCacheSize = -1;
+    linesCacheIdentity = '';
     return [];
   }
-  if (linesCache && size === linesCacheSize) return linesCache;
+  if (linesCache && identity === linesCacheIdentity) return linesCache;
   try {
     const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
     linesCache = content.trim().split('\n').filter(Boolean);
-    linesCacheSize = size;
+    linesCacheIdentity = identity;
     return linesCache;
   } catch {
     linesCache = null;
-    linesCacheSize = -1;
+    linesCacheIdentity = '';
     return [];
   }
 }
@@ -56,7 +61,7 @@ async function readChainLines(): Promise<string[]> {
 /** Drop the cache after a write, so the next read sees the new tail. */
 function invalidateLinesCache(): void {
   linesCache = null;
-  linesCacheSize = -1;
+  linesCacheIdentity = '';
 }
 
 function computeHash(data: string): string {
@@ -96,21 +101,13 @@ async function getStateHash(): Promise<string> {
   }
 }
 
-async function currentChainSize(): Promise<number> {
-  try {
-    return (await fs.stat(getEventChainFilePath())).size;
-  } catch {
-    return -1;
-  }
-}
-
 async function readLastEvent(): Promise<ChainEvent | null> {
-  const size = await currentChainSize();
-  if (lastEventCache && size === lastEventCacheSize) return lastEventCache;
+  const identity = await chainIdentity();
+  if (lastEventCache && identity === lastEventCacheIdentity) return lastEventCache;
 
-  if (size <= 0) {
+  if (!identity || identity.startsWith('0:')) {
     lastEventCache = null;
-    lastEventCacheSize = size;
+    lastEventCacheIdentity = identity;
     return null;
   }
 
@@ -119,15 +116,15 @@ async function readLastEvent(): Promise<ChainEvent | null> {
     const lines = content.trim().split('\n').filter(Boolean);
     if (lines.length === 0) {
       lastEventCache = null;
-      lastEventCacheSize = size;
+      lastEventCacheIdentity = identity;
       return null;
     }
     lastEventCache = JSON.parse(lines[lines.length - 1]) as ChainEvent;
-    lastEventCacheSize = size;
+    lastEventCacheIdentity = identity;
     return lastEventCache;
   } catch {
     lastEventCache = null;
-    lastEventCacheSize = -1;
+    lastEventCacheIdentity = '';
     return null;
   }
 }
@@ -157,7 +154,7 @@ async function appendEventUnsafe(type: string, payload: unknown): Promise<ChainE
 
   await fs.appendFile(getEventChainFilePath(), JSON.stringify(newEvent) + '\n', 'utf-8');
   lastEventCache = newEvent;
-  lastEventCacheSize = await currentChainSize();
+  lastEventCacheIdentity = await chainIdentity();
   // The file just grew: the readers' cached lines are now one event short.
   invalidateLinesCache();
   return newEvent;
@@ -176,34 +173,30 @@ export interface ChainVerification {
   brokenAtSeq?: number;
 }
 
+export function verifyEventSnapshot(events: ChainEvent[]): ChainVerification {
+  let expectedParentHash = '0'.repeat(64);
+  let expectedInputHash = '0'.repeat(64);
+
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i];
+    if (event.seq !== i) return { intact: false, error: `Sequence mismatch at seq ${i}`, brokenAtSeq: i };
+    if (event.parent_hash !== expectedParentHash) return { intact: false, error: `Parent chain broken at seq ${i}`, brokenAtSeq: i };
+    if (i > 0 && event.input_hash !== expectedInputHash) {
+      return { intact: false, error: `State transition tampered at seq ${i}`, brokenAtSeq: i };
+    }
+    const { chain_hash, ...core } = event;
+    if (computeHash(canonicalize(core)) !== chain_hash) {
+      return { intact: false, error: `Hash tampered at seq ${i}`, brokenAtSeq: i };
+    }
+    expectedParentHash = chain_hash;
+    expectedInputHash = event.output_hash;
+  }
+  return { intact: true };
+}
+
 export async function verifyChain(): Promise<ChainVerification> {
   try {
-    const lines = await readChainLines();
-
-    let expectedParentHash = '0'.repeat(64);
-    let expectedInputHash = '0'.repeat(64);
-
-    for (let i = 0; i < lines.length; i++) {
-      const event = JSON.parse(lines[i]) as ChainEvent;
-
-      if (event.seq !== i) return { intact: false, error: `Sequence mismatch at seq ${i}`, brokenAtSeq: i };
-      if (event.parent_hash !== expectedParentHash) return { intact: false, error: `Parent chain broken at seq ${i}`, brokenAtSeq: i };
-
-      // State Transition Verification: input_hash[n] must match output_hash[n-1]
-      if (i > 0 && event.input_hash !== expectedInputHash) {
-        return { intact: false, error: `State transition tampered at seq ${i}`, brokenAtSeq: i };
-      }
-
-      const { chain_hash, ...core } = event;
-      const computed = computeHash(canonicalize(core));
-
-      if (computed !== chain_hash) return { intact: false, error: `Hash tampered at seq ${i}`, brokenAtSeq: i };
-
-      expectedParentHash = chain_hash;
-      expectedInputHash = event.output_hash;
-    }
-
-    return { intact: true };
+    return verifyEventSnapshot(await getEventSnapshot());
   } catch (error: unknown) {
     if (getErrorCode(error) === 'ENOENT') return { intact: true }; // Empty is intact
     return { intact: false, error: getErrorMessage(error) };
@@ -218,6 +211,11 @@ export async function getEvents(limit = 10): Promise<ChainEvent[]> {
   } catch {
     return [];
   }
+}
+
+/** One parsed immutable snapshot shared by timeline, export and verification callers. */
+export async function getEventSnapshot(): Promise<ChainEvent[]> {
+  return (await readChainLines()).map((line) => JSON.parse(line) as ChainEvent);
 }
 
 /**
