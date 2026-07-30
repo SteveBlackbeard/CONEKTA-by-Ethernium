@@ -11,7 +11,8 @@ export interface StateSnapshot {
   merkle_root: string;
   last_check?: string;
   physics: PhysicsSnapshot;
-  drift_kl: number;
+  drift_kl: number | null;
+  drift_available?: boolean;
   crystallizer_version?: string | null;
   /** false when the runtime STATE.json is not present yet */
   available?: boolean;
@@ -57,6 +58,7 @@ export interface DashboardSignals {
   chainTrustLabel: string;
   severity: number;
   severityLabel: string;
+  driftAvailable: boolean;
   entropyRatio: number;
   activity: number;
   merkleShort: string;
@@ -184,7 +186,10 @@ function inferMode({
 export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSignals {
   const state = input.state;
   const physics = state?.physics;
-  const drift = clamp(Number(state?.drift_kl || 0), 0, 1);
+  const driftAvailable = state?.drift_kl !== null
+    && state?.drift_kl !== undefined
+    && Number.isFinite(Number(state.drift_kl));
+  const drift = driftAvailable ? clamp(Number(state?.drift_kl), 0, 1) : 0;
   const eta = clamp(Number(physics?.eta || 0), 0, 1);
   const entropyRatio = physics?.H_max ? clamp((physics.H || 0) / physics.H_max) : 0;
   const chainEvents = input.chainEvents || [];
@@ -206,8 +211,10 @@ export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSi
     : chainEvents.length > 0
     ? 0.84
     : 0.72;
-  const chainTrust = clamp(chainTrustBase - drift * 0.08);
-  const syncLevel = clamp((eta * 0.68) + ((1 - drift) * 0.24) + (chainTrust * 0.08)) * 100;
+  const chainTrust = clamp(chainTrustBase - (driftAvailable ? drift * 0.08 : 0));
+  const syncLevel = driftAvailable
+    ? clamp((eta * 0.68) + ((1 - drift) * 0.24) + (chainTrust * 0.08)) * 100
+    : clamp((eta * 0.9) + (chainTrust * 0.1)) * 100;
   // Use the real total, not the page. chainEvents is capped by the API's
   // limit, so with 9 events and with 900 this term looked identical — a
   // magnitude computed from a page size cannot distinguish a quiet system
@@ -258,6 +265,7 @@ export function deriveDashboardSignals(input: DashboardSignalInput): DashboardSi
     chainTrustLabel,
     severity,
     severityLabel,
+    driftAvailable,
     entropyRatio,
     activity,
     merkleShort,

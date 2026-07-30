@@ -1,100 +1,53 @@
 import { NextResponse } from 'next/server';
-import { forwardBridgePayload, getAdapterStatuses, getAdapterConfig, invokeFrugalChat, invokeOllamaChat } from '@/lib/localAdapters';
+import { getAdapterStatuses, invokeFrugalChat } from '@/lib/localAdapters';
 import { getErrorMessage } from '@/lib/errors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function resolveProvider(input?: string | null) {
-  const raw = (input || process.env.CONTINUITY_CHAT_PROVIDER || 'frugal').toLowerCase().trim();
-  if (raw === 'ollama') return 'ollama' as const;
-  if (raw === 'moltbot') return 'moltbot' as const;
-  if (raw === 'openclaw') return 'openclaw' as const;
-  return 'frugal' as const;
-}
-
 export async function GET() {
-  const provider = resolveProvider();
+  const [adapter] = getAdapterStatuses().filter(({ provider }) => provider === 'frugal');
   return NextResponse.json({
     success: true,
-    provider,
-    adapters: getAdapterStatuses(),
-    ready: getAdapterConfig(provider).enabled && Boolean(getAdapterConfig(provider).baseUrl),
+    provider: 'frugal',
+    authority: 'ethernium-frugal',
+    adapters: adapter ? [adapter] : [],
+    ready: Boolean(adapter?.enabled && adapter?.configured && adapter?.hasApiKey),
+    retiredProviders: ['ollama', 'openclaw', 'moltbot'],
   });
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const provider = resolveProvider(body?.provider);
+    const provider = String(body?.provider || 'frugal').trim().toLowerCase();
     const prompt = String(body?.prompt || '').trim();
-
-    if (!prompt) {
-      return NextResponse.json({ success: false, error: 'Missing prompt' }, { status: 400 });
+    if (provider !== 'frugal') {
+      return NextResponse.json(
+        { success: false, error: 'PARALLEL_COGNITIVE_PROVIDER_RETIRED', authority: 'ethernium-frugal' },
+        { status: 410 },
+      );
     }
-
-    if (provider === 'frugal') {
-      const result = await invokeFrugalChat(prompt, { explain: Boolean(body?.explain) });
-      const reply = [result?.response || 'NO_RESPONSE', result?.next ? `NEXT // ${result.next}` : '']
-        .filter(Boolean)
-        .join('\n');
-      return NextResponse.json({
-        success: true,
-        provider,
-        reply,
-        status: result?.status || 'success',
-        mode: result?.mode || null,
-        raw: result,
-      });
+    if (!prompt) return NextResponse.json({ success: false, error: 'Missing prompt' }, { status: 400 });
+    if (prompt.length > 20_000) {
+      return NextResponse.json({ success: false, error: 'Prompt too large' }, { status: 413 });
     }
-
-    if (provider === 'ollama') {
-      const result = await invokeOllamaChat([
-        {
-          role: 'system',
-          content:
-            'You are Clawdbot operating inside Continuity Legacy. Be concise, operational, and use local tool-calling emulation when available.',
-        },
-        { role: 'user', content: prompt },
-      ]);
-
-      return NextResponse.json({
-        success: true,
-        provider,
-        reply:
-          result?.message?.content ||
-          result?.response ||
-          result?.content ||
-          'NO_RESPONSE',
-        raw: result,
-      });
-    }
-
-    const result = await forwardBridgePayload(
-      provider,
-      {
-        prompt,
-        source: 'continuity-legacy-dashboard',
-        toolCalling: 'emulated',
-      },
-      '',
-    );
-
+    const result = await invokeFrugalChat(prompt, { explain: Boolean(body?.explain) });
     return NextResponse.json({
       success: true,
-      provider,
-      reply:
-        result?.reply ||
-        result?.message ||
-        result?.content ||
-        result?.text ||
-        JSON.stringify(result),
+      provider: 'frugal',
+      authority: 'ethernium-frugal',
+      reply: [result?.response || 'NO_RESPONSE', result?.next ? `NEXT // ${result.next}` : '']
+        .filter(Boolean)
+        .join('\n'),
+      status: result?.status || 'success',
+      mode: result?.mode || null,
       raw: result,
     });
   } catch (error: unknown) {
     return NextResponse.json(
       { success: false, error: getErrorMessage(error, 'CHAT_BRIDGE_FAILURE') },
-      { status: 500 },
+      { status: 502 },
     );
   }
 }
