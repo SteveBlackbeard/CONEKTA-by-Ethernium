@@ -7,7 +7,7 @@
 //
 // The runtime root defaults to `<repo>/runtime` and can be pointed at a real
 // Continuity Legacy checkout via the CONEKTA_RUNTIME_ROOT env var.
-import { isAbsolute, join, relative, resolve, sep } from 'path';
+import { isAbsolute, join, relative, resolve, sep, win32 } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
 let ensuredRoot: string | null = null;
@@ -44,6 +44,21 @@ export function getScriptsDir(): string {
 }
 
 export function isWithin(root: string, candidate: string): boolean {
+  // Treat either slash as a boundary on every host. Otherwise a Windows-style
+  // traversal such as `..\secret.txt` is a harmless filename on Linux CI but
+  // becomes an escape when the same value reaches Windows.
+  if (candidate.split(/[\\/]+/).includes('..')) return false;
+
+  const windowsStyle = /^[a-zA-Z]:[\\/]/.test(root)
+    || /^[a-zA-Z]:[\\/]/.test(candidate)
+    || root.includes('\\')
+    || candidate.includes('\\');
+  if (windowsStyle) {
+    const rel = win32.relative(win32.resolve(root), win32.resolve(candidate));
+    return rel === ''
+      || (!rel.startsWith(`..${win32.sep}`) && rel !== '..' && !win32.isAbsolute(rel));
+  }
+
   const rel = relative(resolve(root), resolve(candidate));
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel));
 }

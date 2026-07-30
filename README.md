@@ -85,12 +85,10 @@ To move Conekta by USB to another machine:
 
 1. Copy the repo.
 2. Copy `.env.example` to `.env.local`.
-3. Set `CONTINUITY_CHAT_PROVIDER` to one of:
-   - `frugal` (default — Ethernium Frugal cognitive kernel on port 3369)
-   - `openclaw`
-   - `ollama`
-   - `moltbot`
-4. Point the corresponding `*_BASE_URL` to the local service on that machine.
+3. Start `ETHERNIUM-FRUGAL-by-Ethernium`, the sole cognitive authority.
+4. If both repositories are not siblings, set `CONEKTA_FRUGAL_ROOT` to the
+   FRUGAL checkout. The bearer is read server-side from FRUGAL's local token
+   file; it is never exposed to the browser.
 5. Start Conekta with:
 
 ```bash
@@ -106,29 +104,13 @@ without an LLM, with provenance and distillation):
 npm run api          # interface server on http://127.0.0.1:3369
 
 # In .env.local (these are already the defaults):
-CONTINUITY_CHAT_PROVIDER=frugal
 CONTINUITY_FRUGAL_ENABLED=true
-CONTINUITY_FRUGAL_BASE_URL=http://127.0.0.1:3369
+CONEKTA_FRUGAL_BASE_URL=http://127.0.0.1:3369
 ```
 
-Example `Ollama` setup:
-
-```bash
-CONTINUITY_CHAT_PROVIDER=ollama
-CONTINUITY_OLLAMA_ENABLED=true
-CONTINUITY_OLLAMA_BASE_URL=http://127.0.0.1:11434
-CONTINUITY_OLLAMA_MODEL=llama3.1
-```
-
-Example `OpenClaw` setup:
-
-```bash
-CONTINUITY_CHAT_PROVIDER=openclaw
-CONTINUITY_OPENCLAW_ENABLED=true
-CONTINUITY_OPENCLAW_BASE_URL=http://127.0.0.1:3001
-```
-
-The bridge is intentionally local-first. Start in conversational/read-only mode, then expose action routing only after the local tool-calling layer is stable.
+Direct Ollama, OpenClaw and Moltbot routes are retired in CONEKTA. If FRUGAL
+uses one of them internally, FRUGAL remains responsible for governance,
+routing and telemetry.
 
 ## Package/runtime boundary
 

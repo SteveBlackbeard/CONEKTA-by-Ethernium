@@ -11,7 +11,8 @@ import { getErrorMessage } from '@/lib/errors';
 const DEFAULT_STATE: StateSnapshot = {
   merkle_root: "awaiting_crystallization",
   physics: { H: 0, H_max: 0, eta: 0, N: 0, W: 0, gini: 0 },
-  drift_kl: 0,
+  drift_kl: null,
+  drift_available: false,
   crystallizer_version: null,
   available: false,
 };
