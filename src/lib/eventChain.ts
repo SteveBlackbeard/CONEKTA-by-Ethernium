@@ -28,6 +28,8 @@ let lastEventCacheIdentity = '';
 // reads per cycle over a log that only grows.
 let linesCache: string[] | null = null;
 let linesCacheIdentity = '';
+let linesCacheEpoch = 0;
+let linesReadInFlight: { identity: string; promise: Promise<string[]> } | null = null;
 
 async function chainIdentity(): Promise<string> {
   try {
@@ -46,22 +48,47 @@ async function readChainLines(): Promise<string[]> {
     return [];
   }
   if (linesCache && identity === linesCacheIdentity) return linesCache;
+
+  // Coalesce a cold read: /api/events asks for the page and total together,
+  // and without an in-flight guard both callers could read the same growing
+  // file before either populated the cache.
+  if (linesReadInFlight?.identity === identity) return linesReadInFlight.promise;
+
+  const epoch = linesCacheEpoch;
+  const promise = (async () => {
+    try {
+      const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      const identityAfterRead = await chainIdentity();
+      if (identityAfterRead !== identity || epoch !== linesCacheEpoch) {
+        return readChainLines();
+      }
+      linesCache = lines;
+      linesCacheIdentity = identity;
+      return lines;
+    } catch {
+      if (epoch === linesCacheEpoch) {
+        linesCache = null;
+        linesCacheIdentity = '';
+      }
+      return [];
+    }
+  })();
+  linesReadInFlight = { identity, promise };
+
   try {
-    const content = await fs.readFile(getEventChainFilePath(), 'utf-8');
-    linesCache = content.trim().split('\n').filter(Boolean);
-    linesCacheIdentity = identity;
-    return linesCache;
-  } catch {
-    linesCache = null;
-    linesCacheIdentity = '';
-    return [];
+    return await promise;
+  } finally {
+    if (linesReadInFlight?.promise === promise) linesReadInFlight = null;
   }
 }
 
 /** Drop the cache after a write, so the next read sees the new tail. */
 function invalidateLinesCache(): void {
+  linesCacheEpoch += 1;
   linesCache = null;
   linesCacheIdentity = '';
+  linesReadInFlight = null;
 }
 
 function computeHash(data: string): string {

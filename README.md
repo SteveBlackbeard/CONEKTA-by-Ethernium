@@ -44,6 +44,8 @@ not verify and must be re-anchored.
 These are CONEKTA adapter modules, not embedded copies of the independent Python
 packages. Product roles, the validated version lines, and the filesystem trust
 boundary are defined in [`docs/PRODUCT_CONTRACT.md`](./docs/PRODUCT_CONTRACT.md).
+The executable release criteria and closed audit ledger live in
+[`docs/PRODUCTION_READINESS.md`](./docs/PRODUCTION_READINESS.md).
 
 ## Current capabilities
 
@@ -59,7 +61,7 @@ boundary are defined in [`docs/PRODUCT_CONTRACT.md`](./docs/PRODUCT_CONTRACT.md)
 Run CONEKTA locally from this repository:
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -68,13 +70,15 @@ Open `http://localhost:3000`.
 Production validation:
 
 ```bash
-npm run lint
-npm run build
 npm run health
+npm run audit
 ```
 
-`npm run health` is the release gate for this repository. It verifies the required Conekta structure, lint, and production build.
-It also runs the automated security and runtime unit suite.
+`npm run health` is the release gate for this repository. It verifies the required
+CONEKTA structure, lint, automated security/runtime tests, production build and
+the filesystem output boundary. Run it from any clone location: repository paths
+are derived from the checkout, while external runtime roots are opt-in deployment
+configuration. `npm run audit` is enforced separately in CI.
 
 Filesystem APIs are loopback-only by default. Do not enable
 `CONEKTA_ALLOW_REMOTE_FILESYSTEM` unless the deployment is protected by trusted
@@ -96,7 +100,8 @@ To move Conekta by USB to another machine:
 5. Start Conekta with:
 
 ```bash
-npm install
+npm ci
+npm run build
 npm run start
 ```
 
