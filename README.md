@@ -6,7 +6,7 @@
   <video src="https://github.com/SteveBlackbeard/CONEKTA-by-Ethernium/raw/main/crrrr.mp4" controls muted loop playsinline width="90%"></video>
 </div>
 
-This repository was extracted from the former `nexus-dashboard/` folder in Continuity Legacy.
+This repository was extracted from the former `nexus-dashboard/` folder in Chronolith.
 
 ## Runtime model
 
