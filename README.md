@@ -1,6 +1,6 @@
 # CONEKTA by Ethernium
 
-**CONEKTA by Ethernium** is the standalone visual command surface for CONTINUITY LEGACY. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
+**CONEKTA by Ethernium** is the standalone visual command surface for Chronolith. It renders the sovereign core, live telemetry, forensic rails, document reading, and the linked-system ecosystem around the central runtime.
 
 <div align="center">
   <video src="https://github.com/SteveBlackbeard/CONEKTA-by-Ethernium/raw/main/crrrr.mp4" controls muted loop playsinline width="90%"></video>
