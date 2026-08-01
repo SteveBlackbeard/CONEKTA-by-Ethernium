@@ -40,7 +40,10 @@ export async function POST(request: Request) {
 
     let content: string;
     try {
-      content = await fs.readFile(fullPath, 'utf-8');
+      // This path is selected at runtime only after the registered-root and
+      // loopback checks above. It is not a build dependency and must not widen
+      // Next's output trace to the whole checkout.
+      content = await fs.readFile(/* turbopackIgnore: true */ fullPath, 'utf-8');
     } catch {
       return NextResponse.json({ success: false, error: `File not found: ${basename(fullPath)}` }, { status: 404 });
     }

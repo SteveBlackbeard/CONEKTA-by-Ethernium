@@ -4,22 +4,21 @@
 
 Continuity Conekta has been extracted locally from `CONTINUITY_LEGACY_by_Ethernium/nexus-dashboard`.
 
-Local repository path:
-
-```text
-D:\Experimentos\continuity-conekta
-```
+The repository is location-independent. Runtime defaults are derived from the
+active checkout; optional external roots are deployment configuration and are
+never stored as author-machine paths.
 
 ## Verification
 
 Completed:
 
 ```text
-npm install
+npm ci
 npm run lint
+npm run test
 npm run build
 npm run health
-npm audit fix
+npm run audit
 ```
 
 Build status:
@@ -28,13 +27,15 @@ Build status:
 passed
 ```
 
-Lint status:
+Quality status:
 
 ```text
-passed with non-blocking warnings
+lint, tests, production build, output trace and high-severity audit passed
 ```
 
-The previous blocking lint failures inherited from the dashboard codebase have been resolved inside the Continuity Conekta repository. Remaining warnings are cleanup debt and do not block the Continuity Legacy Python package release.
+The previous blocking lint failures inherited from the dashboard codebase have
+been resolved inside the CONEKTA repository. The current release gate completes
+without lint warnings.
 
 Resolved blocking lint categories:
 
@@ -55,11 +56,18 @@ A full audit/refactor pass decoupled CONEKTA from the extracted monorepo:
 - `NexusCore.tsx` was reduced from 4,839 to ~2,000 lines; extracted modules live in `src/components/nexus/`. Dead code (tactical dock, Imperium console, unused scene components) was removed — recoverable from git history.
 - Lint: 0 errors, 0 warnings. Build and health pass.
 
-## Next Conekta Work
+## Ongoing policy
 
-1. Publish the repo when the GitHub remote is ready.
-2. Keep the adapter contract synchronized with Continuity Legacy runtime behavior.
+Keep the adapter contract synchronized with Continuity Legacy runtime behavior
+and require the complete release gate for every production change.
 
-## Residual Security Note
+## 2026-08-01 production hardening
 
-`npm audit fix` was applied without `--force`. The remaining audit item is a transitive `postcss` advisory through `next`; npm currently recommends `npm audit fix --force`, but that path would install a breaking Next version and should not be used blindly. Keep Next upgraded within the current major line and revisit when the upstream advisory has a non-breaking fix.
+- Next and its lint configuration are aligned on the current stable patch line.
+- Audited transitive dependencies are pinned through explicit overrides; the
+  high-severity audit reports zero known vulnerabilities.
+- Turbopack is anchored to the active checkout and the dynamic document reader
+  no longer widens the production trace to unrelated files.
+- The health gate rejects development-only files in the document-reader trace.
+- Event-chain cold reads are coalesced, including concurrent page/count/verify
+  requests, and nested payload integrity is covered by regression tests.

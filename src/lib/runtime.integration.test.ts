@@ -34,12 +34,17 @@ describe('CONEKTA runtime integration', () => {
     await registry.registerLinkedSystem({ id: 'system-alpha', name: 'Alpha', accessMode: 'structural', entryCount: 3 });
     const chain = await import('./eventChain');
     await chain.appendEvent('SYSTEM_SCAN', { name: 'Alpha' });
+    const scriptsDir = join(process.env.CONEKTA_RUNTIME_ROOT!, 'scripts');
+    await fs.mkdir(scriptsDir, { recursive: true });
+    await fs.writeFile(join(scriptsDir, 'audit_comparison.py'), '# available\n', 'utf-8');
     const { askSeneschal } = await import('./seneschal');
 
     const status = await askSeneschal('¿estado?');
     expect(status.source).toBe('local');
     expect(status.reply).toContain('SISTEMAS_VINCULADOS: 1');
     expect(status.reply).toContain('Alpha');
+    expect(status.reply).toContain('ACCIONES: 1/3 disponibles');
+    expect(status.reply).toContain('501: CRYSTALLIZE, SEAL');
 
     const activity = await askSeneschal('¿qué pasó en la última hora?');
     expect(activity.intent).toBe('activity-window');
